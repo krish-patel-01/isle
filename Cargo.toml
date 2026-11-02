@@ -5,6 +5,7 @@ members = [
     "crates/isle-daemon",
     "crates/isle-shelf",
     "crates/isle-whisper",
+    "crates/isle-windows",
 ]
 # isle-shelf needs the GTK 4 development files, and isle-whisper cmake, a C++
 # compiler, libclang and (for the GPU) the Vulkan headers and glslc, so they
