@@ -8,12 +8,14 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agents;
 #[path = "../../isle-daemon/src/http.rs"]
 mod http;
 mod media;
 mod store;
 mod tasks;
 mod timer;
+mod usage;
 
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -22,7 +24,7 @@ use std::time::Duration;
 
 use log::warn;
 use serde_json::{Value, json};
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 
@@ -47,6 +49,9 @@ struct App {
     media: Mutex<Value>,
     lyrics: Mutex<Lyrics>,
     media_wishes: Mutex<Sender<MediaWish>>,
+    usage: Mutex<Value>,
+    usage_refresh: Arc<usage::Refresh>,
+    agents: Arc<agents::Pending>,
 }
 
 /// Every interface's state at once, as the extension reads them when `isled` appears.
@@ -59,6 +64,7 @@ fn snapshot(app: tauri::State<'_, Arc<App>>) -> Value {
         "pomodoro": timer.state(),
         "pomodoroConfig": timer.config(),
         "todo": app.tasks.lock().unwrap().items(),
+        "usage": app.usage.lock().unwrap().clone(),
     })
 }
 
@@ -87,7 +93,14 @@ fn call(handle: AppHandle, app: tauri::State<'_, Arc<App>>, interface: String, m
                 let _ = handle.emit("todo", tasks.items());
             }
         }
-        other => warn!("no interface {other}"),
+        // The Usage page opened: fresher numbers, at most every two minutes.
+        "Usage1" if method == "Refresh" => app.usage_refresh.ask(),
+        // The user's answer to a permission: "allow", "always" or "deny".
+        "Agents1" if method == "Resolve" => {
+            let text = |key: &str| arg[key].as_str().unwrap_or_default().to_owned();
+            app.agents.resolve(&text("id"), &text("answer"));
+        }
+        other => warn!("no {method} in {other}"),
     }
 }
 
@@ -341,6 +354,12 @@ fn place(window: &tauri::WebviewWindow) {
 }
 
 fn main() {
+    // Run by Claude Code for its hooks: passes them on to the running Isle, and exits.
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--agent-hook") {
+        agents::run_hook(&args[2..]);
+        return;
+    }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     log::info!("Isle {} starting", env!("CARGO_PKG_VERSION"));
     let (wish_tx, wish_rx) = mpsc::channel();
@@ -350,6 +369,9 @@ fn main() {
         media: Mutex::new(serde_json::to_value(media::gsmtc::NowPlaying::default()).unwrap_or(Value::Null)),
         lyrics: Mutex::new(Lyrics::default()),
         media_wishes: Mutex::new(wish_tx),
+        usage: Mutex::new(json!({"providers": []})),
+        usage_refresh: Arc::default(),
+        agents: Arc::default(),
     });
 
     tauri::Builder::default()
@@ -379,16 +401,26 @@ fn main() {
             let _ = window.set_ignore_cursor_events(true);
             let _ = window.show();
 
+            // Isle's hooks go into Claude Code's settings only when the user turns this on.
+            let claude = CheckMenuItem::with_id(tauri_app, "claude", "Answer Claude Code from the island", true,
+                agents::claude_hooked(), None::<&str>)?;
             let quit = MenuItem::with_id(tauri_app, "quit", "Quit Isle", true, None::<&str>)?;
-            let menu = Menu::with_items(tauri_app, &[&quit])?;
+            let menu = Menu::with_items(tauri_app, &[&claude, &PredefinedMenuItem::separator(tauri_app)?, &quit])?;
+            let claude_item = claude.clone();
             TrayIconBuilder::new()
                 .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
                 .tooltip("Isle")
                 .menu(&menu)
-                .on_menu_event(|handle, event| {
-                    if event.id().as_ref() == "quit" {
-                        handle.exit(0);
+                .on_menu_event(move |handle, event| match event.id().as_ref() {
+                    "quit" => handle.exit(0),
+                    "claude" => {
+                        let on = !agents::claude_hooked();
+                        if let Err(err) = agents::set_claude_hooked(on) {
+                            warn!("could not change Claude Code's hooks: {err:#}");
+                        }
+                        let _ = claude_item.set_checked(agents::claude_hooked());
                     }
+                    _ => {}
                 })
                 .build(tauri_app)?;
 
@@ -397,6 +429,34 @@ fn main() {
             thread::spawn(move || watch_pointer(pointer_window));
             let (clock_handle, clock_app) = (handle.clone(), app.clone());
             thread::spawn(move || watch_clock(clock_handle, clock_app));
+            let (usage_handle, usage_app) = (handle.clone(), app.clone());
+            thread::spawn(move || {
+                let refresh = usage_app.usage_refresh.clone();
+                usage::run(refresh, |usage| {
+                    let value = serde_json::to_value(usage).unwrap_or(Value::Null);
+                    *usage_app.usage.lock().unwrap() = value.clone();
+                    let _ = usage_handle.emit("usage", value);
+                });
+            });
+            let (event_handle, request_handle, gone_handle) = (handle.clone(), handle.clone(), handle.clone());
+            let pending = app.agents.clone();
+            thread::spawn(move || {
+                agents::serve(
+                    pending,
+                    move |event| {
+                        // Nothing shows while the user is in the AI's own window.
+                        if !agents::in_front(&event.pids) {
+                            let _ = event_handle.emit("agentEvent", event);
+                        }
+                    },
+                    move |request| {
+                        let _ = request_handle.emit("agentRequest", request);
+                    },
+                    move |id| {
+                        let _ = gone_handle.emit("agentGone", id);
+                    },
+                );
+            });
             #[cfg(windows)]
             {
                 let media_app = app.clone();
