@@ -12,7 +12,8 @@ import {Island} from './island.js';
 import {MusicPage} from './pages/music.js';
 import {RemindersPage} from './pages/reminders.js';
 import {TimerPage} from './pages/timer.js';
-import {PeekView, pomodoroFinished} from './peek.js';
+import {UsagePage} from './pages/usage.js';
+import {PeekView, agentAsks, agentEvent, pomodoroFinished} from './peek.js';
 
 const {invoke} = window.__TAURI__.core;
 const {listen} = window.__TAURI__.event;
@@ -46,7 +47,7 @@ class Controller {
                 });
         };
         this._compact = new CompactView(reshape);
-        this._pages = [new MusicPage(), new TimerPage(), new RemindersPage()];
+        this._pages = [new MusicPage(), new TimerPage(), new RemindersPage(), new UsagePage()];
         this._expanded = new ExpandedView(this._pages, reshape);
         this._peek = new PeekView();
         this._peek.onOpen = alert => {
@@ -56,10 +57,29 @@ class Controller {
             this.expand();
         };
         this._peek.onDone = () => this._dismissAlert();
+        /** Permissions waiting for an answer, oldest first; and other alerts waiting their turn. */
+        this._asks = [];
+        this._waiting = [];
         daemon.connect((_key, [finished, next]) => {
             const state = daemon.state.pomodoro;
             this._post(pomodoroFinished(finished, next, state, () => daemon.call('pomodoro', 'Start')));
         }, 'phaseFinished');
+        daemon.connect((_key, request) => {
+            const answer = choice => {
+                daemon.call('Agents1', 'Resolve', {id: request.id, answer: choice});
+                this._asks = this._asks.filter(ask => ask.id !== request.id);
+            };
+            this._asks.push(agentAsks(request, answer));
+            // Asking comes first, even over the open island.
+            if (this._peek.alert?.actions === undefined)
+                this._showNext();
+        }, 'agentRequest');
+        daemon.connect((_key, id) => {
+            this._asks = this._asks.filter(ask => ask.id !== id);
+            if (this._peek.alert?.id === id)
+                this._dismissAlert();
+        }, 'agentGone');
+        daemon.connect((_key, event) => this._post(agentEvent(event)), 'agentEvent');
         const views = root.querySelector('#views');
         for (const view of [this._compact.node, this._expanded.node, this._peek.node]) {
             view.style.visibility = 'hidden';
@@ -99,15 +119,45 @@ class Controller {
         delete this._timers[name];
     }
 
-    /** Shows `alert` in the closed island for its duration (the open island keeps open: its page shows it). */
+    /** Shows `alert` in the closed island for its duration; one that asks waits its turn behind it, and the
+     * open island keeps open (its page says the same). */
     _post(alert) {
         if (this._presentation === 'expanded')
             return;
+        if (this._peek.alert && (this._peek.alert.actions || this._asks.length)) {
+            this._waiting = this._waiting.filter(each => each.key !== alert.key).concat(alert);
+            return;
+        }
+        this._show(alert);
+    }
+
+    _show(alert) {
+        if (this._presentation === 'expanded') {
+            document.activeElement?.blur?.();
+            if (this._typing) {
+                this._typing = false;
+                invoke('set_keyboard', {wanted: false});
+            }
+        }
         this._peek.show(alert);
         this._presentation = 'peek';
-        this._alertEnds = performance.now() + (alert.duration ?? 2600);
-        this._later('alert', alert.duration ?? 2600, () => this._alertTimeUp());
+        this._cancel('alert');
+        if (!alert.actions) {
+            this._alertEnds = performance.now() + (alert.duration ?? 2600);
+            this._later('alert', alert.duration ?? 2600, () => this._alertTimeUp());
+        }
         this._present();
+    }
+
+    /** The next permission waiting, else the next alert, else the closed island. */
+    _showNext() {
+        const next = this._asks[0] ?? this._waiting.shift();
+        if (next)
+            this._show(next);
+        else if (this._presentation === 'peek') {
+            this._presentation = 'compact';
+            this._present();
+        }
     }
 
     /** Its time is up: it goes, unless the pointer holds it (then it goes a moment after it leaves). */
@@ -122,9 +172,10 @@ class Controller {
         this._cancel('alert');
         this._peek.alert = null;
         if (this._presentation === 'peek') {
-            this._presentation = 'compact';
             if (present)
-                this._present();
+                this._showNext();
+            else
+                this._presentation = 'compact';
         }
     }
 
@@ -133,6 +184,8 @@ class Controller {
         if (this._presentation === 'peek') {
             const over = this._island.contains(x, y);
             this._syncInteractive();
+            if (this._peek.alert?.actions)
+                return;
             if (over)
                 this._cancel('alert');
             else if (!this._timers.alert)

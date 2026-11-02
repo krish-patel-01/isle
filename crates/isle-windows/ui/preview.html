@@ -29,6 +29,7 @@
       let next = 3;
       window.__TAURI__ = {
         core: {invoke: async (cmd, args) => {
+          (window.previewCalls ??= []).push([cmd, args]);
           if (cmd === 'snapshot') return state;
           if (cmd === 'media_art') return null;
           if (cmd !== 'call') return null;

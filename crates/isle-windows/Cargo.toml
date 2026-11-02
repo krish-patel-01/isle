@@ -29,7 +29,7 @@ dirs.workspace = true
 env_logger.workspace = true
 log.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
 ureq.workspace = true
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 
@@ -45,6 +45,7 @@ windows = { version = "0.61", features = [
     "Win32_System_Com",
     "Win32_System_Threading",
     "Win32_Security",
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_Media",
     "Win32_Media_Audio",
 ] }
