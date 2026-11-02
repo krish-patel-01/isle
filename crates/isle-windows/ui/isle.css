@@ -1,0 +1,372 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 zickrian
+ *
+ * Isle's stylesheet (gnome-extension/stylesheet.css) for a web page: the same classes and values,
+ * with St's `spacing` as flex `gap`. Sizes are CSS pixels, as in the extension. */
+
+@font-face {
+  font-family: "Inter Variable";
+  src: url("fonts/InterVariable.ttf") format("truetype");
+  font-weight: 100 900;
+}
+
+:root { color-scheme: dark; }
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+#isleIsland {
+  position: absolute;
+  inset: 0;
+  color: #ffffff;
+  font-family: "Inter Variable", "Segoe UI Variable", "Segoe UI", sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+#shape { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#views { position: absolute; inset: 0; }
+.isle-view { position: absolute; top: 0; box-sizing: border-box; }
+
+.isle-compact-clock, .isle-compact-second-time, .isle-header-time, .isle-timer-time, .isle-stepper-value,
+.isle-time, .isle-reminders-count, .isle-usage-percent {
+  font-feature-settings: "tnum";
+}
+
+/* ── Building blocks (widgets.js) ─────────────────────── */
+
+.row { display: flex; flex-direction: row; align-items: center; }
+.col { display: flex; flex-direction: column; }
+.grow { flex: 1 1 auto; min-width: 0; }
+
+.isle-icon {
+  display: inline-block;
+  flex: none;
+  background-color: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  margin: 0;
+  outline: none;
+}
+.isle-button {
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 120ms;
+}
+.isle-button:hover { background-color: rgba(255, 255, 255, 0.12); }
+.isle-button:active { background-color: rgba(255, 255, 255, 0.2); }
+.isle-button:disabled { opacity: 0.35; background: none; }
+.isle-button-flat { background-color: transparent; }
+.isle-button-round { background-color: #2c2c2e; padding: 8px; }
+.isle-button-round:hover { background-color: #3a3a3c; }
+.isle-button-small { padding: 6px; }
+
+.isle-art {
+  background-color: #2c2c2e;
+  background-size: cover;
+  background-position: center;
+  flex: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.4);
+  overflow: hidden;
+}
+.isle-art.shown > .isle-icon { display: none; }
+
+.isle-bars { display: flex; align-items: center; gap: 2px; flex: none; }
+.isle-bar { width: 3px; border-radius: 2px; background-color: #ffffff; }
+
+.isle-empty { gap: 4px; align-items: center; justify-content: center; height: 100%; }
+.isle-empty-icon { color: rgba(255, 255, 255, 0.35); padding-bottom: 4px; }
+.isle-empty-title { font-size: 15px; font-weight: 600; letter-spacing: -0.1px; }
+.isle-empty-hint { font-size: 12px; color: rgba(255, 255, 255, 0.5); }
+
+.isle-slider { height: 16px; position: relative; flex: 1 1 auto; cursor: pointer; }
+.isle-slider-track, .isle-slider-fill { position: absolute; left: 0; top: 6px; height: 4px; border-radius: 2px; }
+.isle-slider-track { right: 0; background-color: rgba(255, 255, 255, 0.2); }
+.isle-slider-fill { background-color: #ffffff; }
+.isle-slider-knob {
+  position: absolute; top: 2px; width: 12px; height: 12px; margin-left: -6px;
+  border-radius: 6px; background-color: #ffffff; opacity: 0; transition: opacity 120ms;
+}
+.isle-slider:hover .isle-slider-knob, .isle-slider.dragging .isle-slider-knob { opacity: 1; }
+.isle-slider.disabled { pointer-events: none; }
+
+/* ── Closed (compact.js) ──────────────────────────────── */
+
+.isle-compact { display: flex; align-items: center; justify-content: center; white-space: nowrap; }
+.isle-compact-slot { display: flex; align-items: center; height: 100%; flex: none; }
+.isle-compact-start { justify-content: flex-start; }
+.isle-compact-end { justify-content: flex-end; }
+.isle-compact-clock { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; }
+.isle-compact-clock-row { display: flex; align-items: baseline; gap: 4px; }
+.isle-compact-meridiem { font-size: 13.6px; font-weight: 600; color: rgba(255, 255, 255, 0.72); }
+.isle-compact-second-time { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; }
+.isle-compact-center { flex: 1 1 auto; display: flex; justify-content: center; }
+
+/* ── Open: frame (expanded.js) ────────────────────────── */
+
+.isle-expanded { display: flex; flex-direction: column; }
+.isle-header {
+  height: 32px;
+  flex: none;
+  padding: 0 16px 0 20px;
+  display: flex;
+  align-items: center;
+}
+.isle-tabs { display: flex; gap: 2px; align-items: center; }
+.isle-tab {
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: #ffffff;
+  transition: background-color 150ms;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  box-sizing: border-box;
+}
+.isle-tab:hover { background-color: rgba(255, 255, 255, 0.05); }
+.isle-tab.checked { background-color: rgba(255, 255, 255, 0.09); }
+.isle-tab .isle-icon { opacity: 0.55; transition: opacity 150ms; }
+.isle-tab:hover .isle-icon { opacity: 0.78; }
+.isle-tab.checked .isle-icon { opacity: 1; }
+.isle-tab-name {
+  overflow: hidden;
+  width: 0;
+  transition: width 260ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  white-space: nowrap;
+}
+.isle-tab-label { font-size: 13px; font-weight: 600; margin-left: 6px; padding-bottom: 1px; display: inline-block; }
+.isle-header-status { display: flex; align-items: center; gap: 10px; margin-left: auto; padding-left: 16px; }
+.isle-header-clock { display: flex; align-items: center; gap: 8px; }
+.isle-header-date { font-size: 13px; color: rgba(255, 255, 255, 0.9); }
+.isle-header-time-box { display: flex; align-items: baseline; gap: 3px; }
+.isle-header-time { font-size: 13px; font-weight: 600; }
+.isle-header-meridiem { font-size: 10.4px; font-weight: 600; color: rgba(255, 255, 255, 0.72); }
+.isle-header-settings { padding: 4px; color: rgba(255, 255, 255, 0.6); }
+.isle-header-settings:hover { color: #ffffff; background-color: rgba(255, 255, 255, 0.1); }
+
+.isle-pager { position: relative; height: 150px; flex: none; overflow: hidden; }
+.isle-pager-bottom { height: 20px; flex: none; }
+.isle-page {
+  position: absolute;
+  inset: 0;
+  padding: 6px 20px 0 20px;
+  box-sizing: border-box;
+  display: flex;
+}
+
+/* ── Music ────────────────────────────────────────────── */
+
+.isle-player { display: flex; gap: 20px; width: 100%; align-items: center; }
+.isle-player-column { display: flex; flex-direction: column; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.isle-player-head { display: flex; gap: 8px; align-items: flex-start; }
+.isle-player-modes { display: flex; gap: 2px; margin-right: -5px; }
+.isle-player-modes .isle-button { padding: 5px; color: rgba(255, 255, 255, 0.75); }
+.isle-player-texts { display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-width: 0; }
+.isle-track-title, .isle-track-subtitle, .isle-side-title, .isle-side-artist {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.isle-track-title { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; }
+.isle-track-subtitle { font-size: 13px; color: rgba(255, 255, 255, 0.55); }
+.isle-app-badge {
+  position: absolute; right: -4px; bottom: -4px;
+  padding: 2px; border-radius: 999px; background-color: #000000; display: none;
+}
+.isle-player-progress { display: flex; align-items: center; gap: 10px; padding-top: 6px; }
+.isle-time { font-size: 12px; font-weight: 500; min-width: 34px; color: rgba(255, 255, 255, 0.6); }
+.isle-time-end { text-align: right; }
+.isle-transport { display: flex; gap: 20px; align-items: center; justify-content: center; }
+.isle-play { padding: 6px; }
+.isle-mode-toggle.on { background-color: rgba(255, 255, 255, 0.16); }
+
+/* Lyrics: the player in a column beside the words. */
+.isle-lyrics-layout { display: flex; gap: 26px; width: 100%; }
+.isle-lyrics-side { width: 232px; flex: none; display: flex; flex-direction: column; gap: 8px; justify-content: center; }
+.isle-lyrics-side .isle-player-top { display: flex; gap: 12px; align-items: center; }
+.isle-lyrics-side .isle-player-progress { padding-top: 2px; }
+.isle-lyrics-controls { display: flex; gap: 4px; align-items: center; justify-content: space-between; }
+.isle-lyrics-controls .isle-transport { gap: 14px; }
+.isle-lyrics-controls .isle-mode-toggle { color: rgba(255, 255, 255, 0.75); }
+.isle-side-texts { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.isle-side-title { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
+.isle-side-artist { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+.isle-side-bars { padding-top: 5px; align-self: flex-start; }
+
+.isle-lyrics-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 26px, #000 calc(100% - 26px), transparent 100%);
+}
+.isle-lyrics-column { display: flex; flex-direction: column; gap: 2px; transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1); }
+.isle-lyrics-end { height: 72px; flex: none; }
+.isle-lyric-line {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  padding: 3px 0;
+  color: #ffffff;
+  transform-origin: left center;
+  transition: opacity 380ms, transform 380ms cubic-bezier(0.22, 1, 0.36, 1);
+  cursor: pointer;
+}
+.isle-lyric-line.plain { font-size: 14px; font-weight: 500; letter-spacing: 0; color: rgba(255, 255, 255, 0.85); cursor: default; }
+.isle-lyric-dots { display: flex; gap: 6px; padding: 9px 2px; }
+.isle-lyric-dot { width: 7px; height: 7px; border-radius: 4px; background-color: #ffffff; }
+.isle-lyrics-state { display: flex; flex-direction: column; gap: 3px; justify-content: center; height: 100%; }
+.isle-lyrics-state-icon { color: rgba(255, 255, 255, 0.4); padding-bottom: 5px; }
+.isle-lyrics-state-dots { padding: 4px 0 8px 0; }
+.isle-lyrics-state-dots .isle-lyric-dot { background-color: rgba(255, 255, 255, 0.6); }
+.isle-lyrics-state-title { font-size: 14px; font-weight: 600; color: rgba(255, 255, 255, 0.85); }
+.isle-lyrics-state-hint { font-size: 12px; color: rgba(255, 255, 255, 0.55); }
+@keyframes isle-breathe { 0%, 100% { transform: scale(0.75); opacity: 0.45; } 50% { transform: scale(1); opacity: 1; } }
+.isle-lyric-dots .isle-lyric-dot, .isle-lyrics-state-dots .isle-lyric-dot { animation: isle-breathe 1.6s ease-in-out infinite; }
+.isle-lyric-dot:nth-child(2) { animation-delay: 0.2s !important; }
+.isle-lyric-dot:nth-child(3) { animation-delay: 0.4s !important; }
+
+/* ── Timer ────────────────────────────────────────────── */
+
+.isle-timer { align-items: center; }
+.isle-ring { position: relative; flex: none; display: flex; align-items: center; justify-content: center; }
+.isle-ring canvas { position: absolute; inset: 0; }
+.isle-ring-inside { position: relative; display: flex; flex-direction: column; align-items: center; }
+.isle-timer-time { font-size: 24px; font-weight: 600; letter-spacing: -0.5px; }
+.isle-timer-phase { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.55); }
+.isle-steppers { display: flex; flex-direction: column; gap: 8px; }
+.isle-stepper {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 4px 3px 12px; border-radius: 999px; background-color: #1c1c1e;
+}
+.isle-stepper-name { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.55); width: 40px; }
+.isle-stepper-entry {
+  font: inherit;
+  font-size: 15px; font-weight: 600; letter-spacing: -0.1px;
+  width: 2.4em; text-align: right;
+  padding: 0 6px 0 0;
+  border: none; border-radius: 6px; outline: none;
+  color: #ffffff; background-color: transparent;
+  caret-color: #ffffff;
+}
+.isle-stepper-entry::selection { background-color: rgba(255, 255, 255, 0.28); }
+.isle-stepper-entry:hover { background-color: rgba(255, 255, 255, 0.08); }
+.isle-stepper-entry:focus { background-color: rgba(255, 255, 255, 0.16); }
+.isle-stepper-button { padding: 6px; border-radius: 999px; color: rgba(255, 255, 255, 0.8); }
+.isle-stepper-button:hover { color: #ffffff; background-color: rgba(255, 255, 255, 0.1); }
+.isle-stepper-locked .isle-stepper-entry { color: rgba(255, 255, 255, 0.6); pointer-events: none; }
+.isle-stepper-locked .isle-stepper-button { opacity: 0.3; pointer-events: none; }
+.isle-timer-controls { display: flex; gap: 8px; align-items: center; justify-content: flex-end; width: 160px; flex: none; }
+.isle-timer-controls .isle-button-round { padding: 10px; }
+.isle-start-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 18px; border-radius: 999px; color: #ffffff; background-color: #2c2c2e;
+  transition: background-color 120ms;
+}
+.isle-start-pill:hover { background-color: #3a3a3c; }
+.isle-start-pill-label { font-size: 14px; font-weight: 600; }
+
+/* ── Reminders ────────────────────────────────────────── */
+
+.isle-reminders { flex-direction: column; }
+.isle-reminders-header { height: 25px; flex: none; display: flex; align-items: center; gap: 8px; }
+.isle-reminders-title { font-size: 17px; font-weight: 600; color: #ff9f0a; letter-spacing: -0.2px; flex: 1 1 auto; }
+.isle-reminders-count { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; color: #ff9f0a; padding-right: 2px; }
+.isle-reminder-scroll {
+  flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+  padding: 4px 0 14px 0;
+}
+.isle-reminder-scroll::-webkit-scrollbar { display: none; }
+.isle-reminder { min-height: 24px; display: flex; gap: 10px; align-items: flex-start; transition: opacity 260ms, transform 260ms; }
+.isle-reminder.leaving { opacity: 0; transform: translateX(12px); }
+.isle-reminder .isle-reminder-check { margin-top: 3px; }
+.isle-reminder-new { align-items: center; }
+.isle-reminder-new .isle-reminder-check { margin-top: 0; }
+.isle-reminder-check {
+  width: 10px; height: 10px; padding: 2.5px; flex: none;
+  border-radius: 99px; border: 1.5px solid rgba(255, 255, 255, 0.32);
+  transition: border-color 160ms;
+  display: flex; align-items: center; justify-content: center;
+  box-sizing: content-box;
+}
+.isle-reminder-check:hover { border-color: rgba(255, 255, 255, 0.6); }
+.isle-reminder-check.checked { border-color: #ff9f0a; }
+.isle-reminder-check.faint { border-color: rgba(255, 255, 255, 0.14); }
+.isle-reminder-dot { width: 10px; height: 10px; border-radius: 99px; background-color: #ff9f0a; transform: scale(0); transition: transform 160ms; }
+.isle-reminder-check.checked .isle-reminder-dot { transform: scale(1); }
+.isle-reminder-body { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.isle-reminder-content { display: flex; gap: 6px; padding-right: 2px; align-items: center; }
+.isle-reminder-line { height: 1px; background-color: rgba(255, 255, 255, 0.1); }
+.isle-reminder-title-box { padding: 3px 0; position: relative; flex: 1 1 auto; min-width: 0; }
+.isle-reminder-title { font-size: 13.5px; color: #ffffff; transition: color 200ms; overflow-wrap: anywhere; }
+.isle-reminder-title.done { color: rgba(255, 255, 255, 0.38); }
+.isle-reminder-strike {
+  position: absolute; left: 0; right: 0; top: 50%; height: 1.5px;
+  background-color: rgba(255, 255, 255, 0.45);
+  transform: scaleX(0); transform-origin: left; transition: transform 180ms;
+}
+.isle-reminder-title.done + .isle-reminder-strike { transform: scaleX(1); }
+.isle-reminder-remove { padding: 3px; border-radius: 99px; color: rgba(255, 255, 255, 0.5); opacity: 0; }
+.isle-reminder:hover .isle-reminder-remove { opacity: 1; }
+.isle-reminder-remove:hover { color: #ffffff; background-color: rgba(255, 255, 255, 0.1); }
+.isle-reminders-empty { font-size: 13px; font-weight: 600; color: rgba(255, 255, 255, 0.55); padding-top: 22px; text-align: center; }
+.isle-reminder-field {
+  font: inherit; font-size: 13.5px; padding: 3px 0; border: none; outline: none;
+  color: #ffffff; background: transparent; caret-color: #ffffff; flex: 1 1 auto; min-width: 0;
+}
+.isle-reminder-field::placeholder { color: rgba(255, 255, 255, 0.45); }
+.isle-reminder-field::selection { background-color: rgba(255, 255, 255, 0.28); }
+
+/* ── Alerts (peek.js) ─────────────────────────────────── */
+
+.isle-pill { font-weight: 600; border-radius: 999px; transition: background-color 120ms; white-space: nowrap; }
+.isle-pill-small { font-size: 12px; padding: 5px 14px; color: #ffffff; background-color: #2c2c2e; }
+.isle-pill-small:hover { background-color: #3a3a3c; }
+.isle-pill-small:active { background-color: #48484a; }
+
+.isle-peek { cursor: pointer; }
+.isle-peek-row {
+  display: flex; align-items: center; gap: 10px;
+  height: 56px; padding: 0 12px; width: max-content; max-width: 380px; box-sizing: border-box;
+}
+.isle-peek-icon {
+  width: 32px; height: 32px; border-radius: 16px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.isle-peek-texts { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.isle-peek-title, .isle-peek-subtitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.isle-peek-title { font-size: 14px; font-weight: 600; }
+.isle-peek-subtitle { font-size: 12px; color: rgba(255, 255, 255, 0.5); }
+.isle-peek-accessory { flex: none; padding-left: 4px; }
+.isle-peek-accessory:empty { display: none; }
+
+/* An alert's icon moves once as it comes: the timer's bounces. */
+@keyframes isle-bounce {
+  0% { transform: translateY(0) scale(1); }
+  30% { transform: translateY(-4px) scale(1.08); }
+  55% { transform: translateY(0) scale(0.96); }
+  75% { transform: translateY(-1.5px) scale(1.02); }
+  100% { transform: translateY(0) scale(1); }
+}
+.isle-peek-icon.bounce .isle-icon { animation: isle-bounce 650ms cubic-bezier(0.3, 0.7, 0.4, 1); }
