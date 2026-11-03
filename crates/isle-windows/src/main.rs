@@ -9,9 +9,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod agents;
+mod calendar;
 #[path = "../../isle-daemon/src/http.rs"]
 mod http;
 mod media;
+mod notifications;
+mod screen;
+mod settings;
 mod store;
 mod tasks;
 mod timer;
@@ -24,18 +28,19 @@ use std::time::Duration;
 
 use log::warn;
 use serde_json::{Value, json};
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use crate::media::lyrics::{self, Lyrics, LyricsStatus, TrackQuery};
+use crate::settings::Settings;
 use crate::tasks::Tasks;
 use crate::timer::Timer;
 
 /// The window the island lives in: room for the open island (600 × 202 CSS px), its 22 px shoulders,
 /// a spring's overshoot, and the alerts and assistant that hang lower.
-const WINDOW_WIDTH: f64 = 760.0;
-const WINDOW_HEIGHT: f64 = 420.0;
+pub(crate) const WINDOW_WIDTH: f64 = 760.0;
+pub(crate) const WINDOW_HEIGHT: f64 = 420.0;
 
 /// What the media thread is asked to do.
 enum MediaWish {
@@ -52,6 +57,13 @@ struct App {
     usage: Mutex<Value>,
     usage_refresh: Arc<usage::Refresh>,
     agents: Arc<agents::Pending>,
+    settings: Mutex<Settings>,
+    calendar: Mutex<calendar::Own>,
+    calendar_wanted: Arc<calendar::Wanted>,
+    system_events: Mutex<Value>,
+    notifications: Arc<notifications::Center>,
+    /// Alerts before events not yet begun, for a page that loads after they were sent.
+    events_soon: Mutex<Vec<Value>>,
 }
 
 /// Every interface's state at once, as the extension reads them when `isled` appears.
@@ -65,7 +77,93 @@ fn snapshot(app: tauri::State<'_, Arc<App>>) -> Value {
         "pomodoroConfig": timer.config(),
         "todo": app.tasks.lock().unwrap().items(),
         "usage": app.usage.lock().unwrap().clone(),
+        "settings": app.settings.lock().unwrap().all(),
+        "events": app.calendar.lock().unwrap().events(),
+        "systemEvents": app.system_events.lock().unwrap().clone(),
+        "notifications": app.notifications.state(),
+        "eventsSoon": app.events_soon.lock().unwrap().clone(),
+        "fullscreen": screen::fullscreen_now(),
     })
+}
+
+/// Changes one setting (as the Settings window does), and tells every window.
+#[tauri::command]
+fn settings_set(handle: AppHandle, app: tauri::State<'_, Arc<App>>, key: String, value: Value) -> Result<(), String> {
+    let changed = app.settings.lock().unwrap().set(&key, value).map_err(|err| format!("{err:#}"))?;
+    if changed {
+        settings_changed(&handle, &app, &key);
+    }
+    Ok(())
+}
+
+/// Every setting back to its default; Isle's data stays.
+#[tauri::command]
+fn settings_reset(handle: AppHandle, app: tauri::State<'_, Arc<App>>) {
+    app.settings.lock().unwrap().reset();
+    settings_changed(&handle, &app, "");
+}
+
+fn settings_changed(handle: &AppHandle, app: &App, key: &str) {
+    let _ = handle.emit("settings", app.settings.lock().unwrap().all());
+    if key.is_empty() || key.starts_with("usage-") {
+        app.usage_refresh.ask();
+    }
+    if key.is_empty() || key == "island-monitor" {
+        screen::wake();
+    }
+}
+
+/// How the Calendar's field reads a line ({title, start, end}), as it is typed.
+#[tauri::command]
+fn calendar_parse(text: String) -> Value {
+    calendar::parse_line(&text)
+}
+
+/// Joins a meeting: opens its Meet, Zoom, Teams or Webex link, and no other.
+#[tauri::command]
+fn join_meeting(url: String) {
+    if calendar::is_meeting(&url) {
+        screen::open(&url);
+    }
+}
+
+/// Opens Isle's pages on the web in the browser; only those.
+#[tauri::command]
+fn open_link(url: String) {
+    if url.starts_with("https://github.com/zickrian/isle") {
+        screen::open(&url);
+    }
+}
+
+/// Opens the Settings window, or brings it forward. Async: WebView2 hangs a window made inside a blocking
+/// command.
+#[tauri::command]
+async fn open_settings(handle: AppHandle) {
+    show_settings(&handle);
+}
+
+fn show_settings(handle: &AppHandle) {
+    if let Some(window) = handle.get_webview_window("settings") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    let built = WebviewWindowBuilder::new(handle, "settings", WebviewUrl::App("settings.html".into()))
+        .title("Isle Settings")
+        .inner_size(560.0, 680.0)
+        .min_inner_size(360.0, 400.0)
+        .center()
+        .build();
+    if let Err(err) = built {
+        warn!("could not open Settings: {err}");
+    }
+}
+
+/// Shows or hides the island's window: hidden over a full-screen app, so a game or video runs undisturbed.
+#[tauri::command]
+fn set_shown(window: tauri::WebviewWindow, shown: bool) {
+    let _ = if shown { window.show() } else { window.hide() };
 }
 
 /// One daemon method: `interface` as on D-Bus (`Media1`, `Pomodoro1`, `Todo1`), its argument as JSON.
@@ -91,6 +189,26 @@ fn call(handle: AppHandle, app: tauri::State<'_, Arc<App>>, interface: String, m
             let mut tasks = app.tasks.lock().unwrap();
             if tasks.call(&method, &arg) {
                 let _ = handle.emit("todo", tasks.items());
+            }
+        }
+        // The Calendar page's span, for Windows' calendars; Isle's own events added and removed.
+        "Calendar1" if method == "Range" => {
+            let ms = |key: &str| arg[key].as_i64().unwrap_or_default();
+            app.calendar_wanted.ask(ms("begin_ms"), ms("end_ms"));
+        }
+        "Calendar1" => {
+            let mut own = app.calendar.lock().unwrap();
+            match own.call(&method, &arg) {
+                Ok(true) => {
+                    let _ = handle.emit("events", own.events());
+                }
+                Ok(false) => {}
+                Err(err) => warn!("could not add the event: {err}"),
+            }
+        }
+        "Notifications1" => {
+            if app.notifications.call(&method, &arg) {
+                let _ = handle.emit("notifications", app.notifications.state());
             }
         }
         // The Usage page opened: fresher numbers, at most every two minutes.
@@ -151,6 +269,11 @@ fn focus_behind() {
     }
 }
 
+/// An image as a `data:` URL, its type read from its first bytes.
+pub(crate) fn data_url(bytes: &[u8]) -> String {
+    format!("data:{};base64,{}", mime(bytes), base64(bytes))
+}
+
 fn base64(bytes: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
@@ -207,7 +330,7 @@ fn watch_media(handle: AppHandle, app: Arc<App>, wishes: Receiver<MediaWish>) {
             Ok(MediaWish::Art(reply)) => {
                 let art = reader
                     .art()
-                    .map(|bytes| format!("data:{};base64,{}", mime(&bytes), base64(&bytes)));
+                    .map(|bytes| data_url(&bytes));
                 let _ = reply.send(art);
                 continue;
             }
@@ -249,7 +372,8 @@ fn find_lyrics(handle: &AppHandle, app: &Arc<App>, now: &media::gsmtc::NowPlayin
         album: now.album.clone(),
         length_s: now.length_us as f64 / 1e6,
     };
-    let status = if now.available {
+    let online = app.settings.lock().unwrap().bool("lyrics-online");
+    let status = if now.available && online {
         LyricsStatus::Loading
     } else {
         LyricsStatus::None
@@ -257,7 +381,7 @@ fn find_lyrics(handle: &AppHandle, app: &Arc<App>, now: &media::gsmtc::NowPlayin
     let pending = query.status(status);
     *app.lyrics.lock().unwrap() = pending.clone();
     let _ = handle.emit("lyrics", &pending);
-    if !now.available {
+    if !now.available || !online {
         return;
     }
     let (handle, app) = (handle.clone(), app.clone());
@@ -295,8 +419,26 @@ fn chime() {
 /// Moves the timer on as phases run out, and clears finished tasks at midnight.
 fn watch_clock(handle: AppHandle, app: Arc<App>) {
     let mut day = chrono::Local::now().date_naive();
+    let mut alarms = calendar::Alarms::default();
     loop {
         thread::sleep(Duration::from_millis(500));
+        // Settings' minutes before an event with a time, once: said in the island, with Join for a meeting.
+        let lead = {
+            let settings = app.settings.lock().unwrap();
+            settings.bool("event-alerts").then(|| settings.int("event-alert-minutes").max(0) * 60_000)
+        };
+        if let Some(lead) = lead {
+            let own = app.calendar.lock().unwrap().events();
+            let system = app.system_events.lock().unwrap().clone();
+            let now = timer::now_ms();
+            let mut soon = app.events_soon.lock().unwrap();
+            soon.retain(|event| event["start_ms"].as_i64().unwrap_or_default() > now);
+            for event in alarms.due(&own, &system, lead, now) {
+                log::info!("event soon: {}", event["title"]);
+                soon.push(event.clone());
+                let _ = handle.emit("eventSoon", event);
+            }
+        }
         let finished = {
             let mut timer = app.timer.lock().unwrap();
             timer.tick().map(|(finished, next)| (finished, next, timer.state()))
@@ -304,7 +446,9 @@ fn watch_clock(handle: AppHandle, app: Arc<App>) {
         if let Some((finished, next, state)) = finished {
             let _ = handle.emit("pomodoro", state);
             let _ = handle.emit("phaseFinished", json!([finished, next]));
-            chime();
+            if app.settings.lock().unwrap().bool("chimes") {
+                chime();
+            }
         }
         let today = chrono::Local::now().date_naive();
         if today != day {
@@ -341,23 +485,17 @@ fn watch_pointer(window: tauri::WebviewWindow) {
     }
 }
 
-/// Puts the window at the top of the primary display, centred.
-fn place(window: &tauri::WebviewWindow) {
-    let Ok(Some(monitor)) = window.primary_monitor() else {
-        return;
-    };
-    let size = monitor.size();
-    let origin = monitor.position();
-    let width = (WINDOW_WIDTH * monitor.scale_factor()).round() as i32;
-    let x = origin.x + (size.width as i32 - width) / 2;
-    let _ = window.set_position(PhysicalPosition::new(x, origin.y));
-}
-
 fn main() {
     // Run by Claude Code for its hooks: passes them on to the running Isle, and exits.
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("--agent-hook") {
         agents::run_hook(&args[2..]);
+        return;
+    }
+    // Run by the uninstaller: takes Isle's hooks out of Claude Code and stops starting with Windows.
+    if args.get(1).map(String::as_str) == Some("--uninstall") {
+        let _ = agents::set_claude_hooked(false);
+        let _ = settings::autostart::set(false);
         return;
     }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -372,17 +510,31 @@ fn main() {
         usage: Mutex::new(json!({"providers": []})),
         usage_refresh: Arc::default(),
         agents: Arc::default(),
+        settings: Mutex::new(Settings::load()),
+        calendar: calendar::Own::load(),
+        calendar_wanted: Arc::default(),
+        system_events: Mutex::new(Value::Null),
+        notifications: Arc::default(),
+        events_soon: Mutex::default(),
     });
 
     tauri::Builder::default()
-        .plugin(tauri_single_instance())
+        // One Isle at a time; starting it again (from the Start menu, say) opens its Settings.
+        .plugin(tauri_plugin_single_instance::init(|handle, _args, _cwd| show_settings(handle)))
         .manage(app.clone())
         .invoke_handler(tauri::generate_handler![
             snapshot,
             call,
             media_art,
             set_interactive,
-            set_keyboard
+            set_keyboard,
+            set_shown,
+            settings_set,
+            settings_reset,
+            open_settings,
+            open_link,
+            calendar_parse,
+            join_meeting
         ])
         .setup(move |tauri_app| {
             let window = WebviewWindowBuilder::new(tauri_app, "island", WebviewUrl::App("index.html".into()))
@@ -397,46 +549,89 @@ fn main() {
                 .focused(false)
                 .visible(false)
                 .build()?;
-            place(&window);
+            screen::place(&window, None);
             let _ = window.set_ignore_cursor_events(true);
             let _ = window.show();
 
-            // Isle's hooks go into Claude Code's settings only when the user turns this on.
-            let claude = CheckMenuItem::with_id(tauri_app, "claude", "Answer Claude Code from the island", true,
-                agents::claude_hooked(), None::<&str>)?;
+            // The tray icon: a click opens Settings, as does its menu.
+            let open = MenuItem::with_id(tauri_app, "settings", "Settings", true, None::<&str>)?;
             let quit = MenuItem::with_id(tauri_app, "quit", "Quit Isle", true, None::<&str>)?;
-            let menu = Menu::with_items(tauri_app, &[&claude, &PredefinedMenuItem::separator(tauri_app)?, &quit])?;
-            let claude_item = claude.clone();
+            let menu = Menu::with_items(tauri_app, &[&open, &PredefinedMenuItem::separator(tauri_app)?, &quit])?;
             TrayIconBuilder::new()
                 .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
                 .tooltip("Isle")
                 .menu(&menu)
-                .on_menu_event(move |handle, event| match event.id().as_ref() {
+                .show_menu_on_left_click(false)
+                .on_menu_event(|handle, event| match event.id().as_ref() {
                     "quit" => handle.exit(0),
-                    "claude" => {
-                        let on = !agents::claude_hooked();
-                        if let Err(err) = agents::set_claude_hooked(on) {
-                            warn!("could not change Claude Code's hooks: {err:#}");
-                        }
-                        let _ = claude_item.set_checked(agents::claude_hooked());
-                    }
+                    "settings" => show_settings(handle),
                     _ => {}
                 })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                        show_settings(tray.app_handle());
+                    }
+                })
                 .build(tauri_app)?;
+            first_run();
 
             let handle = tauri_app.handle().clone();
             let pointer_window = window.clone();
             thread::spawn(move || watch_pointer(pointer_window));
+            let (screen_window, screen_app) = (window.clone(), app.clone());
+            thread::spawn(move || {
+                screen::watch(screen_window, move || {
+                    screen_app.settings.lock().unwrap().get("island-monitor").as_str() == Some("active")
+                })
+            });
+            let (calendar_handle, calendar_app) = (handle.clone(), app.clone());
+            thread::spawn(move || {
+                let wanted = calendar_app.calendar_wanted.clone();
+                calendar::watch(&wanted, |events| {
+                    let value = serde_json::to_value(events).unwrap_or(Value::Null);
+                    *calendar_app.system_events.lock().unwrap() = value.clone();
+                    let _ = calendar_handle.emit("systemEvents", value);
+                });
+            });
+            let (notes_handle, posted_handle, center) = (handle.clone(), handle.clone(), app.notifications.clone());
+            thread::spawn(move || {
+                let state = center.clone();
+                notifications::watch(
+                    &center,
+                    || {
+                        let _ = notes_handle.emit("notifications", state.state());
+                    },
+                    |note| {
+                        let _ = posted_handle.emit("notificationPosted", note);
+                    },
+                );
+            });
             let (clock_handle, clock_app) = (handle.clone(), app.clone());
             thread::spawn(move || watch_clock(clock_handle, clock_app));
             let (usage_handle, usage_app) = (handle.clone(), app.clone());
             thread::spawn(move || {
                 let refresh = usage_app.usage_refresh.clone();
-                usage::run(refresh, |usage| {
-                    let value = serde_json::to_value(usage).unwrap_or(Value::Null);
-                    *usage_app.usage.lock().unwrap() = value.clone();
-                    let _ = usage_handle.emit("usage", value);
-                });
+                usage::run(
+                    refresh,
+                    || {
+                        let settings = usage_app.settings.lock().unwrap();
+                        usage::Config {
+                            enabled: settings.bool("usage-enabled"),
+                            claude: settings.bool("usage-claude"),
+                            codex: settings.bool("usage-codex"),
+                            warn: settings.int("usage-warn") as f64,
+                            critical: settings.int("usage-critical") as f64,
+                        }
+                    },
+                    |usage| {
+                        let value = serde_json::to_value(usage).unwrap_or(Value::Null);
+                        *usage_app.usage.lock().unwrap() = value.clone();
+                        let _ = usage_handle.emit("usage", value);
+                    },
+                    |provider, window, percent, resets_at| {
+                        let _ = usage_handle.emit("usageAlert", json!([provider, window, percent, resets_at]));
+                    },
+                );
             });
             let (event_handle, request_handle, gone_handle) = (handle.clone(), handle.clone(), handle.clone());
             let pending = app.agents.clone();
@@ -470,25 +665,25 @@ fn main() {
         .expect("Isle could not start");
 }
 
-/// A second Isle started by hand exits at once and leaves the running one alone, as `isled` does.
-fn tauri_single_instance() -> tauri::plugin::TauriPlugin<tauri::Wry> {
-    tauri::plugin::Builder::new("single-instance")
-        .setup(|_app, _api| {
-            #[cfg(windows)]
-            {
-                use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
-                use windows::Win32::System::Threading::CreateMutexW;
-                use windows::core::w;
-                // SAFETY: a named mutex the process keeps until it exits.
-                unsafe {
-                    let _mutex = CreateMutexW(None, true, w!("Local\\io.github.zickrian.isle"));
-                    if GetLastError() == ERROR_ALREADY_EXISTS {
-                        std::process::exit(0);
-                    }
-                    std::mem::forget(_mutex);
-                }
-            }
-            Ok(())
-        })
-        .build()
+/// The first time an installed Isle runs, it starts with Windows from then on, as Isle does on GNOME (a
+/// switch in Settings turns that off). A build run from the source tree leaves the registry alone.
+fn first_run() {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    #[derive(Default, serde::Serialize, serde::Deserialize)]
+    #[serde(default)]
+    struct State {
+        autostart_set: bool,
+    }
+    let mut state: State = store::load("state.json");
+    if state.autostart_set {
+        return;
+    }
+    if let Err(err) = settings::autostart::set(true) {
+        warn!("could not start Isle with Windows: {err:#}");
+        return;
+    }
+    state.autostart_set = true;
+    store::save("state.json", &state);
 }

@@ -7,8 +7,11 @@
 import {daemon} from '../daemon.js';
 import {el, icon} from '../widgets.js';
 
-/** A limit warns and then turns red at these shares. */
-const MARKS = {warn: 80, critical: 95};
+/** A limit warns and then turns red at these shares (Settings: usage-warn, usage-critical). */
+const marks = () => ({
+    warn: daemon.state.settings?.['usage-warn'] ?? 80,
+    critical: daemon.state.settings?.['usage-critical'] ?? 95,
+});
 const ACCENTS = {claude: [217, 120, 87], codex: [15, 163, 128], grok: [237, 240, 245]};
 const FALLBACK = [10, 132, 255];
 const LOGOS = {claude: 'isle-claude', codex: 'isle-openai', grok: 'isle-grok'};
@@ -64,6 +67,7 @@ export class UsagePage {
             }
         }, {passive: false});
         daemon.connect(() => this._build(), 'usage');
+        daemon.connect(() => this._build(), 'settings');
         this._build();
     }
 
@@ -157,7 +161,7 @@ export class UsagePage {
     _limit({label, percent, resets_at_ms: resetsAt}, accent) {
         const used = Math.max(0, Math.min(100, percent));
         const shown = Math.round(used);
-        const level = shown >= MARKS.critical ? 'critical' : shown >= MARKS.warn ? 'warn' : 'normal';
+        const level = shown >= marks().critical ? 'critical' : shown >= marks().warn ? 'warn' : 'normal';
         const line = el('div', 'isle-usage-line', [el('span', 'isle-usage-window', [label])]);
         if (resetsAt > 0)
             line.append(el('span', 'isle-usage-reset', [resets(resetsAt)]));

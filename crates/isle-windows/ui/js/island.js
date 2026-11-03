@@ -16,6 +16,8 @@ const FADE_IN_DELAY = 120;
 const VIEW_SHIFT = 8;
 /** Below this shoulder size (CSS px) the shoulders fade out, so a small island rounds smoothly. */
 const SHOULDER_FADE = 4;
+/** Auto-hide's fade, in milliseconds. */
+const AUTO_HIDE_FADE = 180;
 
 /** The island's outline as an SVG path, `w` × `h` centred on `cx`, corners `r`, shoulders `s`. */
 export function outline(cx, w, h, r, s) {
@@ -43,6 +45,9 @@ export function outline(cx, w, h, r, s) {
 export class Island {
     /** `root` holds a `<canvas id=shape>` and a `<div id=views>`. */
     constructor(root) {
+        this._root = root;
+        this._autoHidden = false;
+        this._band = 0;
         this._canvas = root.querySelector('#shape');
         this._views = root.querySelector('#views');
         this._width = new Spring(0);
@@ -73,10 +78,30 @@ export class Island {
         return {x: this.centre - w / 2 - s, y: 0, width: w + 2 * s, height: this._height.target};
     }
 
-    /** Whether the point (CSS px, in the window) is on the island, as it is now or will be. */
+    /** Whether the point (CSS px, in the window) is on the island, as it is now or will be. Faded away by
+     * auto-hide, only its top band (`band` px) counts: the pointer at its place brings it back. */
     contains(x, y, slack = 0) {
+        if (this._autoHidden) {
+            const r = this.rect;
+            return this._band > 0 && y >= -1 && y <= this._band && x >= r.x && x <= r.x + r.width;
+        }
         const inside = r => x >= r.x - slack && x <= r.x + r.width + slack && y >= -slack && y <= r.height + slack;
         return inside(this.rect) || (this._driver.running && inside(this.targetRect));
+    }
+
+    get autoHidden() {
+        return this._autoHidden;
+    }
+
+    /** Fades the island away, or back (island.js `setAutoHidden`). */
+    setAutoHidden(hidden, band = 0) {
+        this._band = band;
+        if (hidden === this._autoHidden)
+            return;
+        this._autoHidden = hidden;
+        const ease = hidden ? 'cubic-bezier(0.55, 0.085, 0.68, 0.53)' : 'cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+        this._root.style.transition = `opacity ${AUTO_HIDE_FADE}ms ${ease}`;
+        this._root.style.opacity = hidden ? '0' : '1';
     }
 
     get morphing() {

@@ -4,6 +4,8 @@
 // The island's building blocks (gnome-extension/src/widgets.js) as DOM elements: icons, the progress ring,
 // the music bars, cover art and the scrubber.
 
+import {daemon} from './daemon.js';
+
 /** Makes an element: `el('div', 'isle-x', [children])`. */
 export function el(tag, className = '', children = []) {
     const node = document.createElement(tag);
@@ -242,9 +244,21 @@ export function formatTime(ms) {
     return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 
-/** Whether this computer shows the time with AM and PM. */
+/** Whether times show with a 12-hour clock: as Isle's setting says (clock-format), else as Windows does. */
 export function uses12Hour() {
+    const settings = daemon.state.settings;
+    const format = settings?.['clock-format'];
+    if (format === '12h' || format === '24h')
+        return format === '12h';
+    if (typeof settings?.['system-12h'] === 'boolean')
+        return settings['system-12h'];
     return new Intl.DateTimeFormat(undefined, {hour: 'numeric'}).resolvedOptions().hour12 === true;
+}
+
+/** "14:05", or "2:05 PM" with a 12-hour clock: a time of day that stands alone. */
+export function timeOfDay(date) {
+    const {time, meridiem} = clockParts(date);
+    return meridiem ? `${time} ${meridiem}` : time;
 }
 
 /** The clock as {time, meridiem}: "9:41" and "AM", or "09:41" and "". */

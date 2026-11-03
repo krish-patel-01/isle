@@ -9,11 +9,13 @@ import {CompactView} from './compact.js';
 import {daemon} from './daemon.js';
 import {ExpandedView} from './expanded.js';
 import {Island} from './island.js';
+import {CalendarPage} from './pages/calendar.js';
 import {MusicPage} from './pages/music.js';
+import {NotificationsPage} from './pages/notifications.js';
 import {RemindersPage} from './pages/reminders.js';
 import {TimerPage} from './pages/timer.js';
 import {UsagePage} from './pages/usage.js';
-import {PeekView, agentAsks, agentEvent, pomodoroFinished} from './peek.js';
+import {PeekView, agentAsks, agentEvent, meetingAlert, notificationAlert, pomodoroFinished, trackAlert, usageAlert} from './peek.js';
 
 const {invoke} = window.__TAURI__.core;
 const {listen} = window.__TAURI__.event;
@@ -26,9 +28,13 @@ const PEEK_RADIUS = 28;
 const PEEK_SHOULDER = 13;
 /** An alert held under the pointer goes this long after the pointer leaves it. */
 const ALERT_LEAVE_MS = 1500;
-/** How long the pointer rests before the island opens (Settings: hover-delay), and how far it may move meanwhile. */
-const HOVER_DELAY_MS = 120;
+/** How far the pointer may move while it rests before the island opens (for Settings' hover-delay). */
 const REST_DISTANCE_PX = 10;
+/** Faded away by auto-hide, this much of the island's top brings it back (controller.js REVEAL_EDGE_PX). */
+const REVEAL_EDGE_PX = 2;
+
+/** A setting, as the Settings window last set it. */
+const setting = key => daemon.state.settings?.[key];
 /** Leaving the open island closes it after this long. */
 const COLLAPSE_DELAY_MS = 300;
 /** The pointer counts as on the open island this far past its edge, so a hand's wobble keeps it open. */
@@ -47,7 +53,15 @@ class Controller {
                 });
         };
         this._compact = new CompactView(reshape);
-        this._pages = [new MusicPage(), new TimerPage(), new RemindersPage(), new UsagePage()];
+        const calendar = new CalendarPage();
+        // An event with a time nears: said in the island, with Join for its meeting link.
+        daemon.connect((_key, event) => {
+            if (!setting('hidden-pages')?.includes('calendar'))
+                this._post(meetingAlert(event, () => invoke('join_meeting', {url: event.link})));
+        }, 'eventSoon');
+        const notifications = new NotificationsPage();
+        notifications.onClose = () => this.collapse();
+        this._pages = [new MusicPage(), notifications, new TimerPage(), new RemindersPage(), calendar, new UsagePage()];
         this._expanded = new ExpandedView(this._pages, reshape);
         this._peek = new PeekView();
         this._peek.onOpen = alert => {
@@ -69,6 +83,11 @@ class Controller {
                 daemon.call('Agents1', 'Resolve', {id: request.id, answer: choice});
                 this._asks = this._asks.filter(ask => ask.id !== request.id);
             };
+            // Hidden by a full-screen app, it is asked in the terminal, as Isle does.
+            if (this._hidden) {
+                daemon.call('Agents1', 'Resolve', {id: request.id, answer: 'terminal'});
+                return;
+            }
             this._asks.push(agentAsks(request, answer));
             // Asking comes first, even over the open island.
             if (this._peek.alert?.actions === undefined)
@@ -80,6 +99,20 @@ class Controller {
                 this._dismissAlert();
         }, 'agentGone');
         daemon.connect((_key, event) => this._post(agentEvent(event)), 'agentEvent');
+        daemon.connect((_key, [provider, window, percent, resetsAt]) =>
+            this._post(usageAlert(provider, window, percent, resetsAt, setting('usage-critical') ?? 95)), 'usageAlert');
+        daemon.connect(() => this._onNowPlaying(), 'nowPlaying');
+        // An app's notification: in the island too, unless Settings or Do Not Disturb say not.
+        daemon.connect((_key, note) => {
+            if (setting('notification-alerts') !== false && !daemon.state.notifications?.dnd)
+                this._post(notificationAlert(note, () => daemon.call('Notifications1', 'Open', {id: note.id})));
+        }, 'notificationPosted');
+        daemon.connect(() => this._syncFullscreen(), 'fullscreen');
+        daemon.connect(() => this._syncAutoHide(), 'windowAtTop');
+        daemon.connect(() => {
+            this._syncFullscreen();
+            this._syncAutoHide(true);
+        }, 'settings');
         const views = root.querySelector('#views');
         for (const view of [this._compact.node, this._expanded.node, this._peek.node]) {
             view.style.visibility = 'hidden';
@@ -91,6 +124,11 @@ class Controller {
         this._typing = false;
         this._timers = {};
         this._island.onFrame = () => this._syncInteractive();
+        // A click opens the closed island, also where Settings say it opens on click.
+        this._compact.node.addEventListener('click', () => {
+            if (this._presentation === 'compact' && !this._island.autoHidden)
+                this.expand();
+        });
         window.isleKeyboard = wanted => this._setTyping(wanted);
         // Keys typed while the island holds the keyboard: Escape closes it.
         window.addEventListener('keydown', event => {
@@ -103,7 +141,109 @@ class Controller {
     async start() {
         await daemon.start();
         await listen('pointer', event => this._onPointer(event.payload));
+        this._lastTrack = this._trackOf(daemon.state.nowPlaying);
+        // Events due an alert before the page was there to hear of them (Isle starting just before one).
+        for (const event of daemon.state.eventsSoon ?? []) {
+            if (!setting('hidden-pages')?.includes('calendar'))
+                this._post(meetingAlert(event, () => invoke('join_meeting', {url: event.link})));
+        }
+        this._syncFullscreen();
+        this._syncAutoHide();
         this._present();
+    }
+
+    // Full screen
+
+    /** Over a full-screen app the island is out of the way: hidden whole, the alerts waiting till it leaves full
+     * screen; or, with Settings' alerts over full-screen apps, faded away but for them. */
+    _syncFullscreen() {
+        const hidden = Boolean(daemon.state.fullscreen) && !setting('alerts-over-fullscreen');
+        if (hidden === this._hidden)
+            return;
+        this._hidden = hidden;
+        invoke('set_shown', {shown: !hidden});
+        if (hidden) {
+            this._onHidden();
+            return;
+        }
+        // What waited shows now.
+        if (this._presentation === 'compact')
+            this._showNext();
+    }
+
+    /** Hidden by a full-screen app: an AI's asks go back to its terminal, as one asked now would; the open island
+     * closes, and the alert on screen waits to be seen. */
+    _onHidden() {
+        for (const ask of this._asks)
+            daemon.call('Agents1', 'Resolve', {id: ask.id, answer: 'terminal'});
+        this._asks = [];
+        const alert = this._peek.alert;
+        if (alert && !alert.actions)
+            this._waiting.unshift(alert);
+        this._cancel('alert');
+        this._peek.alert = null;
+        this.collapse();
+    }
+
+    /** Whether a full-screen app is in front with alerts shown over it (Settings). */
+    get _overFullscreen() {
+        return Boolean(daemon.state.fullscreen) && Boolean(setting('alerts-over-fullscreen'));
+    }
+
+    // Auto-hide
+
+    /** Whether the closed island hides now ('now'), after Settings' wait ('later'), or shows (false): the rule of
+     * visibilityRules.js `autoHide`, at once over a full-screen app, which it shows only for alerts. */
+    _autoHideWhen() {
+        if (this._presentation !== 'compact')
+            return false;
+        if (this._overFullscreen)
+            return 'now';
+        const {x, y} = this._pointer;
+        if (this._island.contains(x, y))
+            return false;
+        const mode = setting('auto-hide') ?? 'off';
+        if (mode === 'always' || (mode === 'windows' && daemon.state.windowAtTop))
+            return 'later';
+        return false;
+    }
+
+    /** Hides the closed island as Settings say, unless it is in use; brings it back the moment it is needed again
+     * (an alert, the open island, the pointer at its place). */
+    _syncAutoHide(restart = false) {
+        if (restart)
+            this._cancel('auto-hide');
+        const when = this._autoHideWhen();
+        const band = this._overFullscreen ? 0 : REVEAL_EDGE_PX;
+        if (when !== 'later')
+            this._cancel('auto-hide');
+        if (!when || when === 'now') {
+            this._island.setAutoHidden(Boolean(when), band);
+            return;
+        }
+        if (this._island.autoHidden || this._timers['auto-hide'])
+            return;
+        this._later('auto-hide', (setting('auto-hide-delay') ?? 3) * 1000, () => {
+            if (this._autoHideWhen())
+                this._island.setAutoHidden(true, band);
+        });
+    }
+
+    // A new song
+
+    _trackOf(np) {
+        return np?.available && np.title ? `${np.title}\u001f${np.artist}` : null;
+    }
+
+    /** A new song that starts playing peeks in, if Settings want that. */
+    _onNowPlaying() {
+        const np = daemon.state.nowPlaying;
+        const track = this._trackOf(np);
+        const changed = track !== this._lastTrack;
+        this._lastTrack = track;
+        if (changed && track && np.status === 'Playing' && setting('track-peek') &&
+            !setting('hidden-pages')?.includes('music'))
+            this._post(trackAlert(np, daemon.art()));
     }
 
     _later(name, ms, fn) {
@@ -124,6 +264,11 @@ class Controller {
     _post(alert) {
         if (this._presentation === 'expanded')
             return;
+        // Hidden by a full-screen app: it waits.
+        if (this._hidden) {
+            this._waiting = this._waiting.filter(each => each.key !== alert.key).concat(alert);
+            return;
+        }
         if (this._peek.alert && (this._peek.alert.actions || this._asks.length)) {
             this._waiting = this._waiting.filter(each => each.key !== alert.key).concat(alert);
             return;
@@ -181,6 +326,7 @@ class Controller {
 
     _onPointer({x, y}) {
         this._pointer = {x, y};
+        this._syncAutoHide();
         if (this._presentation === 'peek') {
             const over = this._island.contains(x, y);
             this._syncInteractive();
@@ -207,10 +353,13 @@ class Controller {
             this._rest = null;
             return;
         }
+        // Faded away, the pointer at its place brings it back; it opens only on a click (Settings: open on click).
+        if (this._island.autoHidden || setting('open-on') === 'click')
+            return;
         // Resting: it opens once the pointer has stayed within a few pixels for the hover delay.
         if (!this._rest || Math.hypot(x - this._rest.x, y - this._rest.y) > REST_DISTANCE_PX) {
             this._rest = {x, y};
-            this._later('expand', HOVER_DELAY_MS, () => {
+            this._later('expand', setting('hover-delay') ?? 120, () => {
                 const {x: nowX, y: nowY} = this._pointer;
                 if (this._island.contains(nowX, nowY) && Math.hypot(nowX - this._rest.x, nowY - this._rest.y) <= REST_DISTANCE_PX)
                     this.expand();
@@ -279,6 +428,7 @@ class Controller {
         }
         size.width = 2 * Math.round(size.width / 2);
         this._island.morph(size, view.node);
+        this._syncAutoHide();
         const open = this._presentation === 'expanded';
         if (open !== this._open) {
             this._open = open;

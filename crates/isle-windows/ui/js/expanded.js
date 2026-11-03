@@ -6,7 +6,9 @@
 
 import {timerColor} from './compact.js';
 import {daemon} from './daemon.js';
-import {Bars, Ring, clockParts, el, icon, longDate, setIcon, showsClosed, watchClock} from './widgets.js';
+import {Bars, Ring, clockParts, el, icon, iconButton, longDate, setIcon, showsClosed, watchClock} from './widgets.js';
+
+const {invoke} = window.__TAURI__.core;
 
 export const EXPANDED_WIDTH = 600;
 export const HEADER_HEIGHT = 32;
@@ -15,8 +17,10 @@ export const BOTTOM_PADDING = 20;
 
 const TABS = {
     music: {icon: 'isle-music', label: 'Music'},
+    notifications: {icon: 'isle-bell', label: 'Notifications'},
     focus: {icon: 'isle-timer', label: 'Timer'},
     reminders: {icon: 'isle-tasks', label: 'Reminders'},
+    calendar: {icon: 'isle-calendar', label: 'Calendar'},
     usage: {icon: 'isle-gauge', label: 'Usage'},
 };
 const PAUSED_BARS_OPACITY = 110 / 255;
@@ -26,6 +30,8 @@ const SLIDE_DURATION = 260;
 const WHEEL_STEP = 100;
 const WHEEL_REPEAT_MS = 200;
 const PAGE_KEY = 'isle.page';
+/** The settings icon's, as bright as the sparkle's colour (0.6) beside it. */
+const SETTINGS_OPACITY = 0.6;
 
 export class ExpandedView {
     constructor(pages, onWidth) {
@@ -48,9 +54,14 @@ export class ExpandedView {
         this._syncTabs();
         this._showNow();
         daemon.connect(key => {
-            if (key === 'nowPlaying' || key === 'pomodoro')
+            if (key === 'nowPlaying' || key === 'pomodoro' || key === 'settings')
                 this._updateStatus();
+            if (key === 'settings') {
+                this._syncHidden();
+                this._tickClock();
+            }
         });
+        this._syncHidden();
         watchClock(() => this._tickClock());
         this._updateStatus();
     }
@@ -90,6 +101,10 @@ export class ExpandedView {
             const tab = el('button', `isle-tab isle-tab-${page.name}`, [glyph, clip]);
             tab.title = label;
             tab.addEventListener('click', () => this.showPage(index));
+            // Something new on the page: a dot on its tab.
+            tab.append(el('span', 'isle-tab-dot'));
+            page.onNews = () => tab.classList.toggle('news', Boolean(page.hasNews));
+            page.onNews();
             tabs.append(tab);
             return {tab, glyph, name, clip, iconName};
         });
@@ -106,7 +121,13 @@ export class ExpandedView {
             this._date,
             el('div', 'isle-header-time-box', [this._time, this._meridiem]),
         ]);
-        status.append(this._bars.node, clock);
+        // The gear by the clock: Isle's settings.
+        const settings = iconButton('isle-settings', 'isle-button-flat isle-header-settings', () => invoke('open_settings'), {size: 15});
+        settings.title = 'Settings';
+        settings.firstChild.style.opacity = SETTINGS_OPACITY;
+        settings.addEventListener('pointerenter', () => (settings.firstChild.style.opacity = 1));
+        settings.addEventListener('pointerleave', () => (settings.firstChild.style.opacity = SETTINGS_OPACITY));
+        status.append(this._bars.node, clock, settings);
         header.append(status);
         return header;
     }
@@ -122,7 +143,7 @@ export class ExpandedView {
     /** The music bars while a song is on, the focus ring while the timer is. */
     _updateStatus() {
         const np = daemon.state.nowPlaying;
-        const music = showsClosed(np);
+        const music = showsClosed(np) && !this.pageNamed('music')?.hidden;
         this._bars.node.style.display = music ? '' : 'none';
         this._bars.playing = music && np.status === 'Playing' && this._active;
         this._bars.opacity = music && np.status === 'Playing' ? 1 : PAUSED_BARS_OPACITY;
@@ -169,16 +190,44 @@ export class ExpandedView {
         });
     }
 
+    /** The page called `name`, if there is one. */
+    pageNamed(name) {
+        return this._pages.find(page => page.name === name);
+    }
+
+    /** Pages left out in Settings (hidden-pages; the Usage page by usage-enabled, as Isle) lose their tabs. */
+    _syncHidden() {
+        const settings = daemon.state.settings ?? {};
+        const hidden = settings['hidden-pages'] ?? [];
+        for (const page of this._pages)
+            page.hidden = page.name === 'usage' ? settings['usage-enabled'] === false : hidden.includes(page.name);
+        // At least one page stays.
+        if (this._pages.every(page => page.hidden))
+            this._pages[0].hidden = false;
+        this._tabs.forEach(({tab}, index) => (tab.style.display = this._pages[index].hidden ? 'none' : ''));
+        if (this.page.hidden) {
+            this._index = this._pages.findIndex(page => !page.hidden);
+            this._showNow();
+            this._onWidth?.();
+        }
+        requestAnimationFrame(() => this._syncTabs());
+    }
+
     /** Turns to the page called `name` ('focus', 'music', …), if there is one. */
     showPageNamed(name) {
         const index = this._pages.findIndex(page => page.name === name);
-        if (index >= 0)
+        if (index >= 0 && !this._pages[index].hidden)
             this.showPage(index);
     }
 
-    /** Turns to page `index`, sliding the old one out and the new one in from the side it is on. */
+    /** Turns to page `index`, sliding the old one out and the new one in from the side it is on; a page left out
+     * is passed over, on in the same direction. */
     showPage(index) {
-        index = Math.max(0, Math.min(this._pages.length - 1, index));
+        const step = Math.sign(index - this._index);
+        while (index >= 0 && index < this._pages.length && this._pages[index].hidden)
+            index += step || 1;
+        if (index < 0 || index >= this._pages.length)
+            return;
         if (index === this._index)
             return;
         const direction = Math.sign(index - this._index);

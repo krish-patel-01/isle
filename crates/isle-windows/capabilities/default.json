@@ -1,5 +1,5 @@
 {
   "identifier": "default",
-  "windows": ["island"],
+  "windows": ["island", "settings"],
   "permissions": ["core:default"]
 }

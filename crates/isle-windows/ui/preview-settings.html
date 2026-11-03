@@ -1,0 +1,78 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- For working on the island in a plain browser: `python -m http.server -d crates/isle-windows/ui`, then open
+     /preview.html. A stand-in for the Rust side plays an invented song with placeholder lines; hover the island. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Isle Settings preview</title>
+  <link rel="stylesheet" href="settings.css">
+  
+  <script>
+    (() => {
+      const listeners = {};
+      const start = Date.now();
+      const lines = Array.from({length: 24}, (_, i) => ({time_ms: 4000 + i * 3500, text: `Placeholder line ${i + 1}`}));
+      const state = {
+        nowPlaying: {available: true, identity: 'Media Player', desktop_entry: 'media', status: 'Playing',
+          title: 'Example Song', artist: 'Example Artist', album: 'Example Album', art_key: 'k',
+          length_us: 200e6, position_us: 0, sampled_at_ms: start, rate: 1,
+          can_go_next: true, can_go_previous: true, can_play_pause: true, can_seek: true, resting: false},
+        lyrics: {track: 'k', status: 'synced', lines},
+        pomodoro: {phase: 'idle', running: false, ends_at_ms: null, started_at_ms: null, remaining_ms: 1500000,
+          duration_ms: 1500000, completed_sessions: 0, sessions_before_long_break: 4, today_sessions: 0, today_focus_ms: 0},
+        pomodoroConfig: {focus_minutes: 25, short_break_minutes: 5, long_break_minutes: 15, sessions_before_long_break: 4},
+        settings: {'island-theme': 'black', 'clock-format': 'system', 'lyrics-online': true, 'open-on': 'hover', 'hover-delay': 120, 'auto-hide': 'off', 'auto-hide-delay': 3, 'alerts-over-fullscreen': false, 'island-monitor': 'primary', 'notch-depth': 30, 'hidden-pages': [], 'track-peek': false, 'usage-enabled': true, 'usage-claude': true, 'usage-codex': true, 'usage-warn': 80, 'usage-critical': 95, chimes: true, 'start-with-windows': false, 'agent-alerts-claude': true, 'found-claude': true, 'found-codex': true, 'found-claude-code': true, 'system-12h': true},
+        todo: [{id: 1, title: 'Water the plants', done: false}, {id: 2, title: 'Reply to the email', done: false}],
+      };
+      const emit = (key, value) => (listeners[key] ?? []).forEach(fn => fn({payload: value}));
+      window.previewEmit = emit;
+      let next = 3;
+      window.__TAURI__ = {
+        core: {invoke: async (cmd, args) => {
+          (window.previewCalls ??= []).push([cmd, args]);
+          if (cmd === 'snapshot') return state;
+          if (cmd === 'media_art') return null;
+          if (cmd === 'settings_set') { state.settings = {...state.settings, [args.key]: args.value}; emit('settings', state.settings); return null; }
+          if (cmd !== 'call') return null;
+          const {interface: iface, method, arg} = args;
+          if (iface === 'Todo1') {
+            if (method === 'Add') state.todo.push({id: next++, title: arg.title, done: false});
+            if (method === 'SetDone') state.todo.find(t => t.id === arg.id).done = arg.done;
+            if (method === 'Remove') state.todo = state.todo.filter(t => t.id !== arg.id);
+            if (method === 'Rename') state.todo.find(t => t.id === arg.id).title = arg.title;
+            emit('todo', [...state.todo]);
+          }
+          if (iface === 'Pomodoro1') {
+            const p = state.pomodoro, now = Date.now();
+            if (method === 'Start') Object.assign(p, {phase: p.phase === 'idle' ? 'focus' : p.phase, running: true,
+              ends_at_ms: now + p.remaining_ms, started_at_ms: p.started_at_ms ?? now});
+            if (method === 'Pause') Object.assign(p, {running: false, remaining_ms: p.ends_at_ms - now});
+            if (method === 'Stop') Object.assign(p, {phase: 'idle', running: false, remaining_ms: p.duration_ms, started_at_ms: null});
+            if (method === 'SetConfig') { state.pomodoroConfig = arg; emit('pomodoroConfig', arg); }
+            emit('pomodoro', {...p});
+          }
+          if (iface === 'Media1' && method === 'PlayPause') {
+            const np = state.nowPlaying, now = Date.now();
+            np.position_us += np.status === 'Playing' ? (now - np.sampled_at_ms) * 1000 : 0;
+            np.sampled_at_ms = now;
+            np.status = np.status === 'Playing' ? 'Paused' : 'Playing';
+            emit('nowPlaying', {...np});
+          }
+          return null;
+        }},
+        event: {listen: async (key, fn) => {
+          (listeners[key] ??= []).push(fn);
+          if (key === 'pointer')
+            window.addEventListener('mousemove', e => fn({payload: {x: e.clientX, y: e.clientY}}));
+        }},
+      };
+    })();
+  </script>
+  <script type="module" src="js/settings-window.js"></script>
+</head>
+<body>
+  <nav id="switcher" class="switcher" role="tablist"></nav>
+  <main id="pages"></main>
+</body>
+</html>

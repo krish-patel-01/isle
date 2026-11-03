@@ -97,7 +97,7 @@ export class TimerPage {
         this._phase.textContent = PHASES[state.phase] ?? 'Focus';
         this._playLabel.textContent = state.running ? 'Pause' : started ? 'Resume' : 'Start';
         setIcon(this._playIcon, state.running ? 'isle-pause-symbolic' : 'isle-play-symbolic');
-        this._reset.style.visibility = state.phase !== 'idle' ? 'visible' : 'hidden';
+        this._reset.style.visibility = state.phase !== 'idle' ? '' : 'hidden';
         for (const stepper of this._steppers) {
             stepper.row.classList.toggle('isle-stepper-locked', state.phase !== 'idle');
             if (document.activeElement !== stepper.entry)

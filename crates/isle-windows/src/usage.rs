@@ -6,6 +6,7 @@
 //! minutes (backing off to an hour after failures); Codex's logs fill in between. Kept in step with the
 //! daemon's by hand: the same requests, the same JSON, the same words.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -14,6 +15,7 @@ use log::warn;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::store;
 use crate::timer::now_ms;
 
 const LOCAL_EVERY: Duration = Duration::from_secs(60);
@@ -97,19 +99,53 @@ impl Refresh {
     }
 }
 
-/// Reads every plan for as long as Isle runs, calling `publish` with each change.
-pub fn run(refresh: Arc<Refresh>, publish: impl Fn(&Usage)) {
+/// What Settings ask of the Usage page (`usage-*`), as the extension sends isled's `SetConfig`.
+#[derive(Debug, Clone, Copy)]
+pub struct Config {
+    pub enabled: bool,
+    pub claude: bool,
+    pub codex: bool,
+    pub warn: f64,
+    pub critical: f64,
+}
+
+/// The marks already warned about, by "provider/window/reset": 1 the warning, 2 the critical one.
+type Alerted = BTreeMap<String, u8>;
+const ALERTED: &str = "usage-alerts.json";
+
+/// Reads every plan for as long as Isle runs, calling `publish` with each change and `alert` (provider,
+/// window, percent, reset) as a limit passes Settings' warning marks.
+pub fn run(
+    refresh: Arc<Refresh>,
+    config: impl Fn() -> Config,
+    publish: impl Fn(&Usage),
+    alert: impl Fn(&str, &str, f64, i64),
+) {
     let mut claude = Live::default();
     let mut codex = CodexReader::default();
     let mut last = Usage::default();
+    let mut alerted: Alerted = store::load(ALERTED);
     let mut forced = true;
     loop {
+        let config = config();
         let mut providers = Vec::new();
-        if claude_sign_in().is_file() {
+        if config.enabled && config.claude && claude_sign_in().is_file() {
             providers.push(claude.read(forced));
         }
-        if let Some(chatgpt) = codex.read(forced) {
+        if config.enabled && config.codex
+            && let Some(chatgpt) = codex.read(forced)
+        {
             providers.push(chatgpt);
+        }
+        for provider in &mut providers {
+            settle(provider, now_ms());
+        }
+        let warnings = marks_passed(&providers, &config, &mut alerted, now_ms());
+        if !warnings.is_empty() {
+            store::save(ALERTED, &alerted);
+        }
+        for (provider, window, percent, resets_at_ms) in warnings {
+            alert(&provider, &window, percent, resets_at_ms);
         }
         let usage = Usage { providers };
         if usage != last {
@@ -118,6 +154,72 @@ pub fn run(refresh: Arc<Refresh>, publish: impl Fn(&Usage)) {
         }
         forced = refresh.sleep(LOCAL_EVERY.min(claude.wait()));
     }
+}
+
+/// A window past its reset is empty again, until it is read anew.
+fn settle(provider: &mut Provider, now: i64) {
+    for window in &mut provider.windows {
+        if window.resets_at_ms > 0 && window.resets_at_ms <= now {
+            window.percent = 0.0;
+        }
+    }
+}
+
+/// The marks newly passed, as (provider, window, percent, reset); each is warned about once per window.
+fn marks_passed(
+    providers: &[Provider],
+    config: &Config,
+    alerted: &mut Alerted,
+    now: i64,
+) -> Vec<(String, String, f64, i64)> {
+    // Windows that have reset are forgotten; one with no known reset (0) only once it is low again.
+    alerted.retain(|key, _| {
+        key.rsplit('/')
+            .next()
+            .and_then(|r| r.parse::<i64>().ok())
+            .is_none_or(|r| r == 0 || r > now)
+    });
+    let mut passed = Vec::new();
+    for provider in providers {
+        for window in &provider.windows {
+            let level = if window.percent >= config.critical {
+                2
+            } else if window.percent >= config.warn {
+                1
+            } else {
+                0
+            };
+            // A reset read again a moment off (its fraction of a second changes) is the same window.
+            let prefix = format!("{}/{}/", provider.id, window.label);
+            let key = alerted
+                .keys()
+                .find(|key| {
+                    key.strip_prefix(&prefix)
+                        .and_then(|r| r.parse::<i64>().ok())
+                        .is_some_and(|r| (r - window.resets_at_ms).abs() < 60_000)
+                })
+                .cloned()
+                .unwrap_or_else(|| format!("{prefix}{}", window.resets_at_ms));
+            if level == 0 && window.resets_at_ms == 0 {
+                alerted.remove(&key);
+            }
+            if level > alerted.get(&key).copied().unwrap_or(0) {
+                alerted.insert(key, level);
+                passed.push((
+                    provider.name.clone(),
+                    window.label.clone(),
+                    window.percent,
+                    window.resets_at_ms,
+                ));
+            }
+        }
+    }
+    passed
+}
+
+/// Which plans this computer is signed in to: (Claude, ChatGPT), for Settings to list.
+pub fn found() -> (bool, bool) {
+    (claude_sign_in().is_file(), codex_home().join("auth.json").is_file())
 }
 
 /// Claude's numbers: asked every 10 minutes, the last answer kept through failures.
@@ -561,5 +663,26 @@ mod tests {
         assert_eq!(live.plan, "Plus");
         assert_eq!(live.windows[0].label, "5 hours");
         assert_eq!(live.windows[0].resets_at_ms, 10_000);
+    }
+
+    #[test]
+    fn warns_once_per_mark_and_window() {
+        let config = Config { enabled: true, claude: true, codex: true, warn: 80.0, critical: 95.0 };
+        let mut alerted = Alerted::new();
+        let at = |percent: f64| {
+            vec![Provider {
+                id: "claude".into(),
+                name: "Claude".into(),
+                windows: vec![Window { label: "5 hours".into(), percent, resets_at_ms: 2_000 }],
+                ..Provider::default()
+            }]
+        };
+        assert!(marks_passed(&at(50.0), &config, &mut alerted, 1_000).is_empty());
+        assert_eq!(marks_passed(&at(82.0), &config, &mut alerted, 1_000).len(), 1);
+        assert!(marks_passed(&at(85.0), &config, &mut alerted, 1_000).is_empty());
+        assert_eq!(marks_passed(&at(96.0), &config, &mut alerted, 1_000).len(), 1);
+        assert!(marks_passed(&at(99.0), &config, &mut alerted, 1_000).is_empty());
+        // Once the window has reset, it may warn again.
+        assert!(marks_passed(&[], &config, &mut alerted, 3_000).is_empty() && alerted.is_empty());
     }
 }
