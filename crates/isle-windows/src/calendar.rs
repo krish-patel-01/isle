@@ -156,12 +156,12 @@ pub fn watch(wanted: &Wanted, publish: impl Fn(&SystemEvents)) {
     }
 }
 
-/// The alerts before events: each event with a time, of Isle's own or Windows', once, Settings' minutes
-/// before it starts. Kept here rather than in the page, whose timers Windows may slow while it is out of sight.
+/// The alerts for events: each event with a time, of Isle's own or Windows', once Settings' minutes before it
+/// starts, and once as it starts (within a minute of it: a computer asleep then has missed it). Kept here rather than in the page, whose timers Windows may slow while it is out of sight.
 #[derive(Default)]
 pub struct Alarms {
-    /// The occurrences already alerted, by id and start.
-    alarmed: std::collections::HashSet<(String, i64)>,
+    /// The alerts already given, by id, start, and whether it was the one as it starts.
+    alarmed: std::collections::HashSet<(String, i64, bool)>,
 }
 
 impl Alarms {
@@ -202,12 +202,14 @@ impl Alarms {
             }
         }
         // Forgotten an hour after they began.
-        self.alarmed.retain(|(_, start)| *start > now_ms - 3_600_000);
+        self.alarmed.retain(|(_, start, _)| *start > now_ms - 3_600_000);
         let mut due = Vec::new();
         for event in timed {
             let start = event["start_ms"].as_i64().unwrap_or_default();
-            let key = (event["id"].as_str().unwrap_or_default().to_owned(), start);
-            if start > now_ms && start - lead_ms <= now_ms && self.alarmed.insert(key) {
+            let id = event["id"].as_str().unwrap_or_default().to_owned();
+            let soon = start > now_ms && start - lead_ms <= now_ms;
+            let now = start <= now_ms && now_ms - start < 60_000;
+            if (soon || now) && self.alarmed.insert((id, start, now)) {
                 due.push(event);
             }
         }
@@ -358,14 +360,19 @@ mod tests {
     }
 
     #[test]
-    fn an_event_is_alerted_once_within_its_lead() {
+    fn an_event_is_alerted_before_and_as_it_starts() {
         let mut alarms = Alarms::default();
         let system = json!({"events": [{"id": "a", "title": "Standup", "start_ms": 1_000_000, "end_ms": 2_000_000,
             "all_day": false, "link": ""}]});
         assert!(alarms.due(&json!([]), &system, 300_000, 600_000).is_empty());
         assert_eq!(alarms.due(&json!([]), &system, 300_000, 710_000).len(), 1);
         assert!(alarms.due(&json!([]), &system, 300_000, 720_000).is_empty());
-        assert!(alarms.due(&json!([]), &system, 300_000, 1_000_001).is_empty());
+        // Once more as it starts, and no more.
+        assert_eq!(alarms.due(&json!([]), &system, 300_000, 1_000_001).len(), 1);
+        assert!(alarms.due(&json!([]), &system, 300_000, 1_030_000).is_empty());
+        // Missed by more than a minute (asleep): not said late.
+        let mut late = Alarms::default();
+        assert!(late.due(&json!([]), &system, 300_000, 1_070_000).is_empty());
     }
 
     #[test]
