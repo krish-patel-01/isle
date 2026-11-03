@@ -12,7 +12,9 @@ const INTERFACES = {media: 'Media1', pomodoro: 'Pomodoro1', todo: 'Todo1'};
 
 class Daemon {
     constructor() {
-        this.state = {nowPlaying: null, lyrics: null, pomodoro: null, pomodoroConfig: null, todo: [], usage: null};
+        this.state = {nowPlaying: null, lyrics: null, pomodoro: null, pomodoroConfig: null, todo: [], usage: null,
+            settings: null, fullscreen: false, windowAtTop: false, events: [], systemEvents: null,
+            notifications: null, eventsSoon: []};
         this._handlers = new Map();
     }
 
@@ -61,8 +63,10 @@ class Daemon {
     async start() {
         for (const key of Object.keys(this.state))
             await listen(key, event => this._changed(key, event.payload));
-        // Signals: something happened, with no state kept (a phase ran out, an AI asks, is done, stops asking).
-        for (const signal of ['phaseFinished', 'agentRequest', 'agentGone', 'agentEvent']) {
+        // Signals: something happened, with no state kept (a phase ran out, an AI asks, is done, stops asking, a
+        // plan's limit nears its end).
+        for (const signal of ['phaseFinished', 'agentRequest', 'agentGone', 'agentEvent', 'usageAlert',
+            'notificationPosted', 'eventSoon']) {
             await listen(signal, event => {
                 for (const fn of this._handlers.get(signal) ?? [])
                     fn(signal, event.payload);

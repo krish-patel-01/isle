@@ -48,6 +48,12 @@ export class CompactView {
         daemon.connect(key => {
             if (key === 'nowPlaying' || key === 'pomodoro')
                 this.refresh();
+            // The clock's format, the island's height, a page left out: laid out anew.
+            if (key === 'settings') {
+                this._tickClock();
+                this.refresh();
+                this._onWidth?.();
+            }
         });
         this.refresh();
     }
@@ -56,12 +62,13 @@ export class CompactView {
         return this._width;
     }
 
+    /** As tall as Settings say (Island height, notch-depth); 30 px as Isle comes. */
     get height() {
-        return PILL_HEIGHT;
+        return daemon.state.settings?.['notch-depth'] ?? PILL_HEIGHT;
     }
 
     get radius() {
-        return CORNER_RADIUS;
+        return Math.min(CORNER_RADIUS, this.height / 2);
     }
 
     _tickClock() {
@@ -89,7 +96,8 @@ export class CompactView {
     refresh() {
         const np = daemon.state.nowPlaying;
         const timer = daemon.state.pomodoro;
-        const music = showsClosed(np);
+        // The Music page left out in Settings takes the song out of the closed island too.
+        const music = showsClosed(np) && !daemon.state.settings?.['hidden-pages']?.includes('music');
         const timing = timer && timer.phase !== 'idle' && (timer.running || timer.started_at_ms);
         let left = null, right = null;
         this._timing = timing;
@@ -141,7 +149,7 @@ export class CompactView {
         const hasLeft = this._left.childElementCount > 0, hasRight = this._right.childElementCount > 0;
         let width = SIZE.clock;
         if (hasLeft || hasRight) {
-            const inset = Math.max(Math.round((PILL_HEIGHT - SIZE.art) / 2), CORNER_RADIUS - SIZE.artRadius);
+            const inset = Math.max(Math.round((this.height - SIZE.art) / 2), this.radius - SIZE.artRadius);
             const measure = node => node.firstChild ? Math.ceil(node.firstChild.getBoundingClientRect().width) : 0;
             const rightInset = this._right.firstChild === this._timerTime ? TEXT_INSET : inset;
             const side = Math.max(measure(this._left) + inset, measure(this._right) + rightInset) + SIDE_GAP;

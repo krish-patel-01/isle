@@ -47,11 +47,18 @@ To work on the island's look without building: `python -m http.server -d crates/
   when Claude offers to keep a rule, **Always**; answering in Claude's terminal works as before, and nothing shows
   while its window is in front. A finished turn, or Claude waiting for you, shows too.
 
+- **Calendar**: the month, and the day's events from Windows' calendars and Isle's own (add one in a line,
+  "Dinner 8:00 PM"); world clocks; an alert before each event with a time, with **Join** for a meeting link.
+- **Notifications**: other apps' notifications, in the island as they come and listed on their page, with
+  Do Not Disturb and Clear. Windows still shows its own banners too.
+- **Settings**: a click on the tray icon, the gear in the open island, or starting Isle again. Isle starts with
+  Windows once installed, hides over full-screen videos and games (not over maximized windows), and warns as an
+  AI plan nears its limits.
+
 Hooks talk to Isle over a local port; its number and a random key are in `%LOCALAPPDATA%\Isle\agents.json`.
 `ISLE_DEBUG=1` makes the hook say what it does on stderr.
 
 ## Still to port
 
-Calendar, notifications, the clipboard shelf and files tray, phone sharing, calls, Codex approvals, Grok's usage,
-the voice assistant, app usage, alerts (volume, battery, Caps Lock), the glass look, Settings, and an
-installer.
+The clipboard shelf and files tray, phone sharing, calls, the voice assistant, app usage and the glass look.
+`cargo tauri build` makes the installer (`target/release/bundle/nsis`).
