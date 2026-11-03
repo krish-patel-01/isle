@@ -35,7 +35,7 @@ export function setIcon(node, name, size = null) {
 export function iconButton(name, className, onClick, {size = 16, label = ''} = {}) {
     const button = el('button', `isle-button ${className}`, [icon(name, size)]);
     if (label)
-        button.title = label;
+        button.setAttribute('aria-label', label);
     button.addEventListener('click', event => {
         event.stopPropagation();
         onClick();

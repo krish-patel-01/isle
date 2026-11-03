@@ -52,6 +52,8 @@ To work on the island's look without building: `python -m http.server -d crates/
   **Join** for a meeting link.
 - **Notifications**: other apps' notifications, in the island as they come and listed on their page, with
   Do Not Disturb and Clear. Windows still shows its own banners too.
+- **Apps** (off until turned on in Settings): time in each app today, over 7 days and over 30, kept only on this
+  computer (`%LOCALAPPDATA%\Islepp-usage.json`) for 30 days; Settings says so, and deletes it.
 - **Settings**: a click on the tray icon, the gear in the open island, or starting Isle again. Isle starts with
   Windows once installed, hides over full-screen videos and games (not over maximized windows), and warns as an
   AI plan nears its limits.
@@ -61,6 +63,6 @@ Hooks talk to Isle over a local port; its number and a random key are in `%LOCAL
 
 ## Still to port
 
-The clipboard shelf and files tray, phone sharing, calls, the voice assistant and app usage. The glass look is a
+The clipboard shelf and files tray, phone sharing, calls and the voice assistant. The glass look is a
 deep smoked tint here: Windows has no blur an always-on-top, never-active window can cut to the island's shape.
 `cargo tauri build` makes the installer (`target/release/bundle/nsis`).

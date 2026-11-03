@@ -95,7 +95,7 @@ export class NotificationsPage {
         const corner = el('div', 'isle-notification-corner', [time, dismiss]);
         const row = el('button', `isle-notification-row${body ? ' tall' : ''}`, [
             el('div', 'isle-notification', [notificationBadge(note), texts, corner])]);
-        row.title = note.app;
+        row.setAttribute('aria-label', note.app);
         row.addEventListener('click', () => {
             daemon.call('Notifications1', 'Open', {id: note.id});
             this.onClose?.();
