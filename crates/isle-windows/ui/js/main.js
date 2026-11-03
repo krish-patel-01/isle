@@ -15,6 +15,7 @@ import {NotificationsPage} from './pages/notifications.js';
 import {RemindersPage} from './pages/reminders.js';
 import {TimerPage} from './pages/timer.js';
 import {UsagePage} from './pages/usage.js';
+import * as Theme from './theme.js';
 import {PeekView, agentAsks, agentEvent, meetingAlert, notificationAlert, pomodoroFinished, trackAlert, usageAlert} from './peek.js';
 
 const {invoke} = window.__TAURI__.core;
@@ -112,6 +113,7 @@ class Controller {
         daemon.connect(() => {
             this._syncFullscreen();
             this._syncAutoHide(true);
+            this._syncTheme();
         }, 'settings');
         const views = root.querySelector('#views');
         for (const view of [this._compact.node, this._expanded.node, this._peek.node]) {
@@ -149,7 +151,28 @@ class Controller {
         }
         this._syncFullscreen();
         this._syncAutoHide();
+        this._syncTheme();
         this._present();
+    }
+
+    /** The island in Isle's black or in glass (Settings: island-theme, glass-tint); the controls follow the tint in
+     * three steps, clear, middle and dark, as on GNOME. */
+    _syncTheme() {
+        const name = setting('island-theme') ?? 'black', tint = setting('glass-tint') ?? 0;
+        const key = `${name}:${tint}`;
+        if (key === this._themeKey)
+            return;
+        this._themeKey = key;
+        Theme.setTheme(name, tint);
+        const glass = Theme.translucent();
+        const root = document.getElementById('isleIsland');
+        root.classList.toggle('isle-translucent', glass);
+        root.classList.toggle('isle-glass-mid', glass && tint >= 34 && tint < 67);
+        root.classList.toggle('isle-glass-dark', glass && tint >= 67);
+        this._island.fill = Theme.fill();
+        this._island.edge = Theme.edge();
+        this._island.sheen = Theme.sheen();
+        this._island.redraw();
     }
 
     // Full screen

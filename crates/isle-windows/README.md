@@ -48,7 +48,8 @@ To work on the island's look without building: `python -m http.server -d crates/
   while its window is in front. A finished turn, or Claude waiting for you, shows too.
 
 - **Calendar**: the month, and the day's events from Windows' calendars and Isle's own (add one in a line,
-  "Dinner 8:00 PM"); world clocks; an alert before each event with a time, with **Join** for a meeting link.
+  "Dinner 8:00 PM"); world clocks; an alert before each event with a time and another as it starts, with
+  **Join** for a meeting link.
 - **Notifications**: other apps' notifications, in the island as they come and listed on their page, with
   Do Not Disturb and Clear. Windows still shows its own banners too.
 - **Settings**: a click on the tray icon, the gear in the open island, or starting Isle again. Isle starts with
@@ -60,5 +61,6 @@ Hooks talk to Isle over a local port; its number and a random key are in `%LOCAL
 
 ## Still to port
 
-The clipboard shelf and files tray, phone sharing, calls, the voice assistant, app usage and the glass look.
+The clipboard shelf and files tray, phone sharing, calls, the voice assistant and app usage. The glass look is a
+deep smoked tint here: Windows has no blur an always-on-top, never-active window can cut to the island's shape.
 `cargo tauri build` makes the installer (`target/release/bundle/nsis`).

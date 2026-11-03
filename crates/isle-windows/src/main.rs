@@ -432,7 +432,7 @@ fn watch_clock(handle: AppHandle, app: Arc<App>) {
             let system = app.system_events.lock().unwrap().clone();
             let now = timer::now_ms();
             let mut soon = app.events_soon.lock().unwrap();
-            soon.retain(|event| event["start_ms"].as_i64().unwrap_or_default() > now);
+            soon.retain(|event| event["start_ms"].as_i64().unwrap_or_default() + 60_000 > now);
             for event in alarms.due(&own, &system, lead, now) {
                 log::info!("event soon: {}", event["title"]);
                 soon.push(event.clone());

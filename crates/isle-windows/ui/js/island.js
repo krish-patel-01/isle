@@ -58,6 +58,9 @@ export class Island {
         this._driver = new SpringDriver(this._springs, () => this._sync());
         this._view = null;
         this.fill = [0, 0, 0, 1];
+        /** The glass's rim ({top, bottom} alphas) and sheen, or none (theme.js). */
+        this.edge = null;
+        this.sheen = 0;
         this.onFrame = null;
         window.addEventListener('resize', () => this._sync());
     }
@@ -102,6 +105,21 @@ export class Island {
         const ease = hidden ? 'cubic-bezier(0.55, 0.085, 0.68, 0.53)' : 'cubic-bezier(0.25, 0.46, 0.45, 0.94)';
         this._root.style.transition = `opacity ${AUTO_HIDE_FADE}ms ${ease}`;
         this._root.style.opacity = hidden ? '0' : '1';
+    }
+
+    /** The outline as drawn now, its corner and shoulder held as `outline` holds them. */
+    get shape() {
+        const w = Math.max(0, this._width.value), h = Math.max(0, this._height.value);
+        const r = Math.max(0, Math.min(this._radius.value, w / 2, h));
+        let s = Math.max(0, Math.min(this._shoulder.value, h - r));
+        if (s < SHOULDER_FADE)
+            s *= s / SHOULDER_FADE;
+        return {cx: this.centre, w, h, r, s};
+    }
+
+    /** Draws the shape again (a new colour). */
+    redraw() {
+        this._sync();
     }
 
     get morphing() {
@@ -173,13 +191,38 @@ export class Island {
             canvas.height = Math.round(height * ratio);
         }
         const path = outline(this.centre, this._width.value, this._height.value, this._radius.value, this._shoulder.value);
+        const shape = this.shape;
         const cr = canvas.getContext('2d');
         cr.setTransform(1, 0, 0, 1, 0, 0);
         cr.clearRect(0, 0, canvas.width, canvas.height);
         cr.setTransform(ratio, 0, 0, ratio, 0, 0);
         const [r, g, b, a] = this.fill;
         cr.fillStyle = `rgba(${r * 255}, ${g * 255}, ${b * 255}, ${a})`;
-        cr.fill(new Path2D(path));
+        const shapePath = new Path2D(path);
+        cr.fill(shapePath);
+        // Glass: lighter at the top, and a rim lit from above, inside the edge.
+        if (this.sheen > 0 || this.edge) {
+            cr.save();
+            cr.clip(shapePath);
+            const top = 0, bottom = Math.max(1, shape.h);
+            if (this.sheen > 0) {
+                const sheen = cr.createLinearGradient(0, top, 0, bottom);
+                sheen.addColorStop(0, `rgba(255, 255, 255, ${this.sheen})`);
+                sheen.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                cr.fillStyle = sheen;
+                cr.fill(shapePath);
+            }
+            if (this.edge) {
+                const rim = cr.createLinearGradient(0, top, 0, bottom);
+                rim.addColorStop(0, `rgba(255, 255, 255, ${this.edge.top})`);
+                rim.addColorStop(1, `rgba(255, 255, 255, ${this.edge.bottom})`);
+                cr.strokeStyle = rim;
+                cr.lineWidth = 2;
+                cr.stroke(shapePath);
+            }
+            cr.restore();
+        }
+
         this._views.style.clipPath = `path('${path}')`;
         // Each view stays put on screen, centred, as the shape moves around it.
         for (const view of this._views.children)

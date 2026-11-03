@@ -324,6 +324,24 @@ function searchCity(pick) {
     field.focus();
 }
 
+/** How dark the glass is, Clear to Dark, on a slider; shown only while the island is glass. */
+function glassRow() {
+    const slider = el('input', 'slider');
+    Object.assign(slider, {type: 'range', min: 0, max: 100, step: 5});
+    const node = row('Glass', '', el('div', 'slider-ends', [el('span', 'end', ['Clear']), slider, el('span', 'end', ['Dark'])]));
+    const describe = value => node.setSubtitle(value <= 0 ? 'Clear glass: what is behind shows through'
+        : value >= 100 ? 'Dark frosted glass' : `${value}% darker`);
+    slider.addEventListener('input', () => describe(Number(slider.value)));
+    slider.addEventListener('change', () => set('glass-tint', Number(slider.value)));
+    syncs.push(() => {
+        node.hidden = setting('island-theme') !== 'glass';
+        if (document.activeElement !== slider)
+            slider.value = setting('glass-tint') ?? 0;
+        describe(Number(slider.value));
+    });
+    return node;
+}
+
 function islandPage() {
     const delay = depends(intRow('hover-delay', 'Rest before opening', 'In milliseconds', 60, 1000, 20),
         {enabled: () => setting('open-on') === 'hover'});
@@ -334,6 +352,11 @@ function islandPage() {
             switchRow('start-with-windows', 'Start with Windows', 'Isle opens on its own when you sign in'),
         ]),
         group('Appearance', null, [
+            choiceRow('island-theme', 'Island', 'Black, or clear glass that shows what is behind it, blurred', [
+                ['black', 'Black'],
+                ['glass', 'Glass'],
+            ]),
+            glassRow(),
             intRow('notch-depth', 'Island height', 'How far the closed island hangs from the top of the screen, in pixels', 24, 40),
             choiceRow('clock-format', 'Clock', 'The time in the island and its pages', [
                 ['system', 'As Windows'],

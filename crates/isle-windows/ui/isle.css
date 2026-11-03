@@ -630,3 +630,130 @@ button {
 .isle-peek-answered { font-size: 12px; font-weight: 600; padding: 9px 0 12px 0; text-align: right; }
 .isle-peek-allowed { color: #30d158; }
 .isle-peek-denied { color: #ff453a; }
+
+/* ── Glass (theme.js): Isle's glass styles for the parts on Windows ─── */
+
+#isleIsland { transition: none; }
+#isleIsland.isle-translucent .isle-button:focus { color: #ffffff; }
+#isleIsland.isle-translucent .isle-empty-icon { color: rgba(255, 255, 255, 0.56); }
+#isleIsland.isle-translucent .isle-empty-hint, #isleIsland.isle-translucent .isle-peek-subtitle { color: rgba(255, 255, 255, 0.67); }
+#isleIsland.isle-translucent .isle-header-settings { color: rgba(255, 255, 255, 0.73); }
+#isleIsland.isle-translucent .isle-header-settings:hover { color: #ffffff; }
+#isleIsland.isle-translucent .isle-player-modes .isle-button { color: rgba(255, 255, 255, 0.83); }
+#isleIsland.isle-translucent .isle-track-subtitle { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-time { color: rgba(255, 255, 255, 0.73); }
+#isleIsland.isle-translucent .isle-lyrics-controls .isle-mode-toggle { color: rgba(255, 255, 255, 0.83); }
+#isleIsland.isle-translucent .isle-side-artist { color: rgba(255, 255, 255, 0.73); }
+#isleIsland.isle-translucent .isle-lyrics-state-icon { color: rgba(255, 255, 255, 0.6); }
+#isleIsland.isle-translucent .isle-lyrics-state-hint { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-timer-phase, #isleIsland.isle-translucent .isle-stepper-name { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-reminder-title.done { color: rgba(255, 255, 255, 0.58); }
+#isleIsland.isle-translucent .isle-reminder-remove { color: rgba(255, 255, 255, 0.67); }
+#isleIsland.isle-translucent .isle-reminder-remove:hover { color: #ffffff; }
+#isleIsland.isle-translucent .isle-reminders-empty { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-cal-year { color: rgba(255, 255, 255, 0.67); }
+#isleIsland.isle-translucent .isle-cal-arrow { color: rgba(255, 255, 255, 0.83); }
+#isleIsland.isle-translucent .isle-cal-weekday { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-cal-weekday.weekend { color: rgba(255, 255, 255, 0.67); }
+#isleIsland.isle-translucent .isle-cal-day.weekend, #isleIsland.isle-translucent .isle-cal-preview { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-cal-event-time { color: rgba(255, 255, 255, 0.77); }
+#isleIsland.isle-translucent .isle-cal-world-meta, #isleIsland.isle-translucent .isle-cal-world-chip-city, #isleIsland.isle-translucent .isle-cal-empty { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-notifications-heading { color: rgba(255, 255, 255, 0.73); }
+#isleIsland.isle-translucent .isle-notifications-dnd-text { color: rgba(255, 255, 255, 0.67); }
+#isleIsland.isle-translucent .isle-notification-body { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-notification-dismiss { color: rgba(255, 255, 255, 0.8); }
+#isleIsland.isle-translucent .isle-notification-time { color: rgba(255, 255, 255, 0.64); }
+#isleIsland.isle-translucent .isle-usage-plan { color: rgba(255, 255, 255, 0.8); }
+#isleIsland.isle-translucent .isle-usage-stamp { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-usage-stamp.warning { color: rgba(255, 255, 255, 0.8); }
+#isleIsland.isle-translucent .isle-usage-reset, #isleIsland.isle-translucent .isle-usage-empty { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-button:hover, #isleIsland.isle-translucent .isle-header-settings:hover, #isleIsland.isle-translucent .isle-stepper-button:hover, #isleIsland.isle-translucent .isle-reminder-remove:hover, #isleIsland.isle-translucent .isle-cal-world-toggle:hover { background-color: rgba(255, 255, 255, 0.16); }
+#isleIsland.isle-translucent .isle-button:active { background-color: rgba(255, 255, 255, 0.24); }
+#isleIsland.isle-translucent .isle-button-round, #isleIsland.isle-translucent .isle-pill-small, #isleIsland.isle-translucent .isle-start-pill, #isleIsland.isle-translucent .isle-cal-today { background-color: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+#isleIsland.isle-translucent .isle-button-round:hover, #isleIsland.isle-translucent .isle-pill-small:hover, #isleIsland.isle-translucent .isle-start-pill:hover, #isleIsland.isle-translucent .isle-cal-today:hover { background-color: rgba(255, 255, 255, 0.2); }
+#isleIsland.isle-translucent .isle-button-round:active, #isleIsland.isle-translucent .isle-pill-small:active, #isleIsland.isle-translucent .isle-start-pill:active { background-color: rgba(255, 255, 255, 0.26); }
+#isleIsland.isle-translucent .isle-notification-dismiss { background-color: rgba(255, 255, 255, 0.2); }
+#isleIsland.isle-translucent .isle-notification-dismiss:hover { background-color: rgba(255, 255, 255, 0.28); }
+#isleIsland.isle-translucent .isle-notification-row, #isleIsland.isle-translucent .isle-cal-event, #isleIsland.isle-translucent .isle-cal-world-row { background-color: rgba(255, 255, 255, 0.08); }
+#isleIsland.isle-translucent .isle-notification-row:hover { background-color: rgba(255, 255, 255, 0.12); }
+#isleIsland.isle-translucent .isle-cal-month-title:hover { background-color: rgba(255, 255, 255, 0.1); }
+#isleIsland.isle-translucent .isle-usage-plan { background-color: rgba(255, 255, 255, 0.14); }
+#isleIsland.isle-translucent .isle-art { background-color: rgba(255, 255, 255, 0.1); }
+#isleIsland.isle-translucent .isle-notification-glyph { background-color: rgba(255, 255, 255, 0.14); }
+#isleIsland.isle-translucent .isle-app-badge { background-color: #16171c; }
+#isleIsland.isle-translucent .isle-peek-code { background-color: rgba(0, 0, 0, 0.2); }
+#isleIsland.isle-translucent .isle-tab:hover, #isleIsland.isle-translucent .isle-tab:focus { background-color: rgba(255, 255, 255, 0.08); }
+#isleIsland.isle-translucent .isle-tab.checked { background-color: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+#isleIsland.isle-translucent .isle-stepper { background-color: rgba(255, 255, 255, 0.08); }
+#isleIsland.isle-translucent .isle-entry { background-color: rgba(255, 255, 255, 0.1) !important; }
+#isleIsland.isle-translucent .isle-entry:focus-within { background-color: rgba(255, 255, 255, 0.14) !important;
+  box-shadow: inset 0 0 0 2px rgba(53, 132, 228, 0.7) !important; }
+#isleIsland.isle-translucent .isle-stepper-entry:hover { background-color: rgba(255, 255, 255, 0.12) !important; }
+#isleIsland.isle-translucent .isle-stepper-entry:focus, #isleIsland.isle-translucent .isle-stepper-entry:focus:hover { background-color: rgba(255, 255, 255, 0.2) !important; }
+#isleIsland.isle-translucent .isle-entry input::placeholder, #isleIsland.isle-translucent .isle-reminder-field::placeholder { color: rgba(255, 255, 255, 0.72) !important; }
+#isleIsland.isle-translucent .isle-reminder-line { background-color: rgba(255, 255, 255, 0.16); }
+#isleIsland.isle-translucent .isle-cal-world-strip { border-top-color: rgba(255, 255, 255, 0.16); }
+#isleIsland.isle-translucent .isle-reminder-strike { background-color: rgba(255, 255, 255, 0.6); }
+#isleIsland.isle-translucent .isle-reminder-check { border-color: rgba(255, 255, 255, 0.46); }
+#isleIsland.isle-translucent .isle-reminder-check:hover { border-color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-reminder-check.checked { border-color: #ff9f0a; }
+#isleIsland.isle-translucent .isle-reminder-check.faint { border-color: rgba(255, 255, 255, 0.22); }
+#isleIsland.isle-translucent .isle-slider-track { background-color: rgba(255, 255, 255, 0.24); }
+#isleIsland.isle-translucent .isle-usage-track { background-color: rgba(255, 255, 255, 0.16); }
+#isleIsland.isle-translucent .isle-usage-dot { background-color: rgba(255, 255, 255, 0.3); }
+#isleIsland.isle-translucent .isle-usage-dot:hover { background-color: rgba(255, 255, 255, 0.55); }
+#isleIsland.isle-translucent .isle-usage-dot.shown { background-color: #ffffff; }
+#isleIsland.isle-translucent .isle-cal-dot { background-color: rgba(255, 255, 255, 0.68); }
+#isleIsland.isle-translucent .isle-cal-dot.on-today { background-color: #ffffff; }
+#isleIsland.isle-translucent .isle-cal-day:hover { background-color: rgba(255, 255, 255, 0.16); }
+#isleIsland.isle-translucent .isle-cal-day.selected { background-color: rgba(255, 255, 255, 0.26); }
+#isleIsland.isle-translucent .isle-cal-day.today { background-color: #ff453a; }
+#isleIsland.isle-translucent .isle-cal-day.today:hover { background-color: #ff5f55; }
+#isleIsland.isle-translucent .isle-peek-denied, #isleIsland.isle-translucent .isle-cal-month-name, #isleIsland.isle-translucent .isle-usage-percent.critical { color: #ff968d; }
+#isleIsland.isle-translucent .isle-peek-allowed { color: #64dc82; }
+#isleIsland.isle-translucent .isle-reminders-title, #isleIsland.isle-translucent .isle-reminders-count { color: #ffb340; }
+#isleIsland.isle-translucent .isle-stepper-locked .isle-stepper-entry { color: rgba(255, 255, 255, 0.72) !important; }
+#isleIsland.isle-translucent .isle-reminder-field { --selection: rgba(53, 132, 228, 0.6); }
+#isleIsland.isle-glass-mid .isle-button-round, #isleIsland.isle-glass-mid .isle-pill-small, #isleIsland.isle-glass-mid .isle-start-pill, #isleIsland.isle-glass-mid .isle-cal-today { background-color: rgba(255, 255, 255, 0.115);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); }
+#isleIsland.isle-glass-mid .isle-button-round:hover, #isleIsland.isle-glass-mid .isle-pill-small:hover, #isleIsland.isle-glass-mid .isle-start-pill:hover, #isleIsland.isle-glass-mid .isle-cal-today:hover { background-color: rgba(255, 255, 255, 0.17); }
+#isleIsland.isle-glass-mid .isle-tab.checked { background-color: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); }
+#isleIsland.isle-glass-dark .isle-button:hover { background-color: rgba(255, 255, 255, 0.1); }
+#isleIsland.isle-glass-dark .isle-button-round, #isleIsland.isle-glass-dark .isle-pill-small, #isleIsland.isle-glass-dark .isle-start-pill, #isleIsland.isle-glass-dark .isle-cal-today { background-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none; }
+#isleIsland.isle-glass-dark .isle-button-round:hover, #isleIsland.isle-glass-dark .isle-pill-small:hover, #isleIsland.isle-glass-dark .isle-start-pill:hover, #isleIsland.isle-glass-dark .isle-cal-today:hover { background-color: rgba(255, 255, 255, 0.15); }
+#isleIsland.isle-glass-dark .isle-button-round:active, #isleIsland.isle-glass-dark .isle-pill-small:active, #isleIsland.isle-glass-dark .isle-start-pill:active { background-color: rgba(255, 255, 255, 0.2); }
+#isleIsland.isle-glass-dark .isle-notification-dismiss { background-color: rgba(255, 255, 255, 0.14); }
+#isleIsland.isle-glass-dark .isle-notification-dismiss:hover { background-color: rgba(255, 255, 255, 0.2); }
+#isleIsland.isle-glass-dark .isle-notification-row, #isleIsland.isle-glass-dark .isle-cal-event, #isleIsland.isle-glass-dark .isle-cal-world-row { background-color: rgba(255, 255, 255, 0.1); }
+#isleIsland.isle-glass-dark .isle-notification-row:hover { background-color: rgba(255, 255, 255, 0.15); }
+#isleIsland.isle-glass-dark .isle-usage-plan { background-color: rgba(255, 255, 255, 0.1); }
+#isleIsland.isle-glass-dark .isle-art, #isleIsland.isle-glass-dark .isle-notification-glyph { background-color: rgba(255, 255, 255, 0.08); }
+#isleIsland.isle-glass-dark .isle-tab:hover, #isleIsland.isle-glass-dark .isle-tab:focus { background-color: rgba(255, 255, 255, 0.06); }
+#isleIsland.isle-glass-dark .isle-tab.checked { background-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none; }
+#isleIsland.isle-glass-dark .isle-stepper { background-color: rgba(255, 255, 255, 0.07); }
+#isleIsland.isle-glass-dark .isle-entry { background-color: rgba(255, 255, 255, 0.08) !important; }
+#isleIsland.isle-glass-dark .isle-entry:focus-within { background-color: rgba(255, 255, 255, 0.12) !important; }
+#isleIsland.isle-glass-dark .isle-slider-track { background-color: rgba(255, 255, 255, 0.18); }
+#isleIsland.isle-glass-dark .isle-usage-track { background-color: rgba(255, 255, 255, 0.12); }
+#isleIsland.isle-glass-dark .isle-reminder-line { background-color: rgba(255, 255, 255, 0.12); }
+#isleIsland.isle-glass-dark .isle-cal-world-strip { border-top-color: rgba(255, 255, 255, 0.12); }
+#isleIsland.isle-translucent .isle-pill-white { background-color: #ffffff;
+  box-shadow: none; }
+#isleIsland.isle-translucent .isle-pill-white:hover { background-color: rgba(255, 255, 255, 0.86); }
+#isleIsland.isle-translucent .isle-pill-white:active { background-color: rgba(255, 255, 255, 0.72); }
+#isleIsland.isle-translucent .isle-mode-toggle.on, #isleIsland.isle-translucent .isle-cal-world-toggle.checked, #isleIsland.isle-translucent .isle-dnd-toggle.checked { color: #ffffff;
+  background-color: #3584e4;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22); }
+#isleIsland.isle-translucent .isle-mode-toggle.on:hover, #isleIsland.isle-translucent .isle-cal-world-toggle.checked:hover, #isleIsland.isle-translucent .isle-dnd-toggle.checked:hover { background-color: #4a90e8; }
+#isleIsland.isle-translucent .isle-mode-toggle.on:active { background-color: #2a76d3; }
+#isleIsland.isle-translucent .isle-slider-fill { background-color: #3584e4; }
+#isleIsland.isle-translucent .isle-entry, #isleIsland.isle-translucent .isle-stepper-entry { caret-color: #3584e4;
+  --selection: #3584e4; }
+#isleIsland.isle-glass-dark .isle-mode-toggle.on, #isleIsland.isle-glass-dark .isle-cal-world-toggle.checked, #isleIsland.isle-glass-dark .isle-dnd-toggle.checked { box-shadow: none; }
+
+#isleIsland.isle-translucent input::selection { background-color: rgba(53, 132, 228, 0.6); }
