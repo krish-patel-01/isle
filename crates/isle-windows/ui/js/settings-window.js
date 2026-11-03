@@ -219,7 +219,8 @@ const PAGES = [
 /** A switch per page; the last one on can't be turned off, so the island always has a page. */
 function pagesGroup() {
     const hidden = () => setting('hidden-pages') ?? [];
-    const shown = () => PAGES.filter(([name]) => !hidden().includes(name)).length + (setting('usage-enabled') ? 1 : 0);
+    const shown = () => PAGES.filter(([name]) => !hidden().includes(name)).length + (setting('usage-enabled') ? 1 : 0) +
+        (setting('app-usage') ? 1 : 0);
     const rows = PAGES.map(([name, title, iconName, subtitle]) => {
         const node = switchRow(null, title, subtitle, {
             prefix: iconName,
@@ -233,6 +234,9 @@ function pagesGroup() {
         });
         return node;
     });
+    // The Apps page's own switch: off as Isle comes, so nothing is timed until asked.
+    const apps = switchRow('app-usage', 'Apps', 'Records the time spent in each app, kept on this computer for 30 days',
+        {prefix: 'isle-apps'});
     // The Usage page's own switch, here too, so every tab is in one place.
     const usage = switchRow('usage-enabled', 'AI Usage', 'Your AI plans’ limits, and warnings as one nears its end',
         {prefix: 'isle-gauge'});
@@ -243,7 +247,30 @@ function pagesGroup() {
         usage.setSubtitle(!found ? 'Sign in to Claude Code or Codex to see your plan'
             : last ? 'The island keeps at least one page' : 'Your AI plans’ limits, and warnings as one nears its end');
     });
-    return group('Pages', 'The tabs of the open island. Turn off the ones you don’t use.', [...rows, usage]);
+    syncs.push(() => {
+        const last = shown() === 1 && setting('app-usage');
+        apps.setSensitive(!last);
+    });
+    return group('Pages', 'The tabs of the open island. Turn off the ones you don’t use.', [...rows, apps, usage]);
+}
+
+/** What the Apps page keeps, and a way to forget it; its switch is with the other pages. */
+function appUsageGroup() {
+    const clear = el('button', 'pill-button', ['Delete…']);
+    clear.addEventListener('click', event => {
+        event.stopPropagation();
+        confirm({
+            heading: 'Delete app usage data?',
+            body: 'Every app’s time recorded so far is removed from this computer. This cannot be undone.',
+            action: 'Delete',
+        }, () => daemon.call('AppUsage1', 'Clear'));
+    });
+    // Said in full: this is a record of what the user does, so what is kept, where, and for how long.
+    return group('App Usage', 'While the Apps page is on, Isle records which app is in front and for how long, day ' +
+        'by day: the app’s name and program, never what you type or see. It is kept in a file on this computer ' +
+        '(%LOCALAPPDATA%\\Isle\\app-usage.json) for 30 days and never sent anywhere. Five minutes without input ' +
+        'pause it, unless a video keeps the screen awake. Turning the page off stops recording; what was recorded stays ' +
+        'until you delete it.', [row('Delete app usage data', 'Every day recorded so far, from this computer', clear)]);
 }
 
 /** The cities whose time the Calendar page shows, each with its time and a remove button, and a search to add one. */
@@ -352,7 +379,7 @@ function islandPage() {
             switchRow('start-with-windows', 'Start with Windows', 'Isle opens on its own when you sign in'),
         ]),
         group('Appearance', null, [
-            choiceRow('island-theme', 'Island', 'Black, or clear glass that shows what is behind it, blurred', [
+            choiceRow('island-theme', 'Island', 'Black, or smoked glass that lets what is behind it show through', [
                 ['black', 'Black'],
                 ['glass', 'Glass'],
             ]),
@@ -380,6 +407,7 @@ function islandPage() {
             hideDelay,
         ]),
         pagesGroup(),
+        appUsageGroup(),
         worldClocksGroup(),
         group('Alerts', null, [
             switchRow('notification-alerts', 'Notifications', 'Apps’ notifications in the island too, as Windows shows them'),

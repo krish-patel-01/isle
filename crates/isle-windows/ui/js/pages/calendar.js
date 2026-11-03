@@ -148,7 +148,7 @@ export class CalendarPage {
         this._monthName = el('span', 'isle-cal-month-name');
         this._year = el('span', 'isle-cal-year');
         const title = el('button', 'isle-cal-month-title', [this._monthName, this._year]);
-        title.title = 'Go to today';
+        title.setAttribute('aria-label', 'Go to today');
         title.addEventListener('click', () => this._goToToday());
         const header = el('div', 'isle-cal-month-header', [title,
             iconButton('isle-chevron-left-symbolic', 'isle-button-flat isle-cal-arrow', () => this._moveMonth(-1), {size: 11, label: 'Previous month'}),
@@ -444,7 +444,7 @@ export class CalendarPage {
     _dayCell(day, busy) {
         const button = el('button', this._dayClass(day), [String(day.getDate())]);
         button._day = day;
-        button.title = day.toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'long'});
+        button.setAttribute('aria-label', day.toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'long'}));
         button.addEventListener('click', () => this._select(day));
         this._dayButtons.push(button);
         const cell = el('div', 'isle-cal-cell', [button]);

@@ -9,6 +9,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod agents;
+mod app_usage;
 mod calendar;
 #[path = "../../isle-daemon/src/http.rs"]
 mod http;
@@ -64,6 +65,7 @@ struct App {
     notifications: Arc<notifications::Center>,
     /// Alerts before events not yet begun, for a page that loads after they were sent.
     events_soon: Mutex<Vec<Value>>,
+    app_usage: Arc<app_usage::Usage>,
 }
 
 /// Every interface's state at once, as the extension reads them when `isled` appears.
@@ -111,6 +113,12 @@ fn settings_changed(handle: &AppHandle, app: &App, key: &str) {
     if key.is_empty() || key == "island-monitor" {
         screen::wake();
     }
+}
+
+/// App usage today, over seven days and over 30, for the Apps page (AppUsage1's GetStats).
+#[tauri::command]
+async fn app_usage_stats(app: tauri::State<'_, Arc<App>>) -> Result<Value, ()> {
+    Ok(app.app_usage.stats())
 }
 
 /// How the Calendar's field reads a line ({title, start, end}), as it is typed.
@@ -206,6 +214,8 @@ fn call(handle: AppHandle, app: tauri::State<'_, Arc<App>>, interface: String, m
                 Err(err) => warn!("could not add the event: {err}"),
             }
         }
+        // Settings' Clear: every day of app usage forgotten.
+        "AppUsage1" if method == "Clear" => app.app_usage.clear(),
         "Notifications1" => {
             if app.notifications.call(&method, &arg) {
                 let _ = handle.emit("notifications", app.notifications.state());
@@ -516,6 +526,7 @@ fn main() {
         system_events: Mutex::new(Value::Null),
         notifications: Arc::default(),
         events_soon: Mutex::default(),
+        app_usage: Arc::new(app_usage::Usage::load()),
     });
 
     tauri::Builder::default()
@@ -534,6 +545,7 @@ fn main() {
             open_settings,
             open_link,
             calendar_parse,
+            app_usage_stats,
             join_meeting
         ])
         .setup(move |tauri_app| {
@@ -605,6 +617,11 @@ fn main() {
                         let _ = posted_handle.emit("notificationPosted", note);
                     },
                 );
+            });
+            let usage_app2 = app.clone();
+            thread::spawn(move || {
+                let usage = usage_app2.app_usage.clone();
+                app_usage::watch(&usage, || usage_app2.settings.lock().unwrap().bool("app-usage"));
             });
             let (clock_handle, clock_app) = (handle.clone(), app.clone());
             thread::spawn(move || watch_clock(clock_handle, clock_app));

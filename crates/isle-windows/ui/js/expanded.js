@@ -21,6 +21,7 @@ const TABS = {
     focus: {icon: 'isle-timer', label: 'Timer'},
     reminders: {icon: 'isle-tasks', label: 'Reminders'},
     calendar: {icon: 'isle-calendar', label: 'Calendar'},
+    apps: {icon: 'isle-apps', label: 'Apps'},
     usage: {icon: 'isle-gauge', label: 'Usage'},
 };
 const PAUSED_BARS_OPACITY = 110 / 255;
@@ -99,7 +100,7 @@ export class ExpandedView {
             const name = el('span', 'isle-tab-label', [label]);
             const clip = el('span', 'isle-tab-name', [name]);
             const tab = el('button', `isle-tab isle-tab-${page.name}`, [glyph, clip]);
-            tab.title = label;
+            tab.setAttribute('aria-label', label);
             tab.addEventListener('click', () => this.showPage(index));
             // Something new on the page: a dot on its tab.
             tab.append(el('span', 'isle-tab-dot'));
@@ -123,7 +124,7 @@ export class ExpandedView {
         ]);
         // The gear by the clock: Isle's settings.
         const settings = iconButton('isle-settings', 'isle-button-flat isle-header-settings', () => invoke('open_settings'), {size: 15});
-        settings.title = 'Settings';
+        settings.setAttribute('aria-label', 'Settings');
         settings.firstChild.style.opacity = SETTINGS_OPACITY;
         settings.addEventListener('pointerenter', () => (settings.firstChild.style.opacity = 1));
         settings.addEventListener('pointerleave', () => (settings.firstChild.style.opacity = SETTINGS_OPACITY));
@@ -200,7 +201,9 @@ export class ExpandedView {
         const settings = daemon.state.settings ?? {};
         const hidden = settings['hidden-pages'] ?? [];
         for (const page of this._pages)
-            page.hidden = page.name === 'usage' ? settings['usage-enabled'] === false : hidden.includes(page.name);
+            // The Apps and Usage pages have their own switches (app-usage, usage-enabled), as in Isle.
+            page.hidden = page.name === 'usage' ? settings['usage-enabled'] === false
+                : page.name === 'apps' ? !settings['app-usage'] : hidden.includes(page.name);
         // At least one page stays.
         if (this._pages.every(page => page.hidden))
             this._pages[0].hidden = false;

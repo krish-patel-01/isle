@@ -9,6 +9,7 @@ import {CompactView} from './compact.js';
 import {daemon} from './daemon.js';
 import {ExpandedView} from './expanded.js';
 import {Island} from './island.js';
+import {AppsPage} from './pages/apps.js';
 import {CalendarPage} from './pages/calendar.js';
 import {MusicPage} from './pages/music.js';
 import {NotificationsPage} from './pages/notifications.js';
@@ -62,7 +63,8 @@ class Controller {
         }, 'eventSoon');
         const notifications = new NotificationsPage();
         notifications.onClose = () => this.collapse();
-        this._pages = [new MusicPage(), notifications, new TimerPage(), new RemindersPage(), calendar, new UsagePage()];
+        this._pages = [new MusicPage(), notifications, new TimerPage(), new RemindersPage(), calendar, new AppsPage(),
+            new UsagePage()];
         this._expanded = new ExpandedView(this._pages, reshape);
         this._peek = new PeekView();
         this._peek.onOpen = alert => {

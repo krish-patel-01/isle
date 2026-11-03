@@ -60,7 +60,7 @@ export class RemindersPage {
 
     _row(task) {
         const check = el('button', `isle-reminder-check${task.done ? ' checked' : ''}`, [el('div', 'isle-reminder-dot')]);
-        check.title = task.done ? 'Not done' : 'Done';
+        check.setAttribute('aria-label', task.done ? 'Not done' : 'Done');
         const title = el('div', `isle-reminder-title${task.done ? ' done' : ''}`, [task.title]);
         const titleBox = el('div', 'isle-reminder-title-box', [title, el('div', 'isle-reminder-strike')]);
         const remove = iconButton('isle-close-symbolic', 'isle-button-flat isle-reminder-remove',

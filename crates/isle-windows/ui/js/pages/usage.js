@@ -104,7 +104,7 @@ export class UsagePage {
         this._stage.replaceChildren(this._content(providers[this._index]));
         this._dots.replaceChildren(...(providers.length > 1 ? providers.map((provider, i) => {
             const dot = el('button', `isle-usage-dot${i === this._index ? ' shown' : ''}`);
-            dot.title = provider.name;
+            dot.setAttribute('aria-label', provider.name);
             dot.addEventListener('click', () => this._show(i, Math.sign(i - this._index)));
             return dot;
         }) : []));
