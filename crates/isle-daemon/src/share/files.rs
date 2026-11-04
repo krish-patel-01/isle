@@ -77,8 +77,28 @@ pub fn publish(temp: &Path, dir: &Path, name: &str) -> io::Result<PathBuf> {
     ))
 }
 
+/// Renames `from` to `to` unless `to` exists: Windows' rename without MOVEFILE_REPLACE_EXISTING never replaces.
+#[cfg(windows)]
+fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
+    use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
+    use windows::core::HSTRING;
+    // SAFETY: two paths as wide strings; no flag lets it replace a file.
+    unsafe {
+        MoveFileExW(&HSTRING::from(from.as_os_str()), &HSTRING::from(to.as_os_str()), MOVE_FILE_FLAGS(0))
+    }
+    .map_err(|err| {
+        // ERROR_ALREADY_EXISTS and ERROR_FILE_EXISTS: the name is taken.
+        if matches!(err.code().0 as u32 & 0xFFFF, 183 | 80) {
+            io::Error::from(io::ErrorKind::AlreadyExists)
+        } else {
+            io::Error::other(err)
+        }
+    })
+}
+
 /// Renames `from` to `to` unless `to` exists (RENAME_NOREPLACE); where the file system can't, a link
 /// (which fails the same way) and an unlink.
+#[cfg(unix)]
 fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
     use std::os::unix::ffi::OsStrExt;
     let c =

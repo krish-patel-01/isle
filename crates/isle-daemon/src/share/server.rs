@@ -530,12 +530,11 @@ async fn preview<H: Host>(session: &Session, host: &H, id: &str) -> Answer {
 async fn open_file(path: Option<PathBuf>) -> Option<(tokio::fs::File, u64)> {
     let path = path?;
     let open = async {
-        let file = tokio::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(path)
-            .await
-            .ok()?;
+        let mut options = tokio::fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        options.custom_flags(libc::O_NONBLOCK);
+        let file = options.open(path).await.ok()?;
         let meta = file.metadata().await.ok()?;
         meta.is_file().then_some((file, meta.len()))
     };
@@ -724,12 +723,11 @@ impl Part {
             ".phone-{}.part",
             session::hex(&session::random::<8>())
         ));
-        let file = tokio::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&path)
-            .await?;
+        let mut options = tokio::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let file = options.open(&path).await?;
         Ok((Self { path, armed: true }, file))
     }
 
@@ -748,6 +746,18 @@ impl Drop for Part {
 }
 
 /// Bytes free for the user on the disk holding `dir`.
+#[cfg(windows)]
+fn free_space(dir: &Path) -> Option<u64> {
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    use windows::core::HSTRING;
+    let mut free = 0u64;
+    // SAFETY: a path as a wide string, and one u64 to fill.
+    unsafe { GetDiskFreeSpaceExW(&HSTRING::from(dir.as_os_str()), Some(&mut free), None, None) }.ok()?;
+    Some(free)
+}
+
+/// Bytes free for the user on the disk holding `dir`.
+#[cfg(unix)]
 fn free_space(dir: &Path) -> Option<u64> {
     use std::os::unix::ffi::OsStrExt;
     let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
@@ -848,5 +858,7 @@ pub fn device_name(agent: &str) -> String {
     }
 }
 
+// Named, so the Windows build (which includes this file by path) finds it too.
 #[cfg(test)]
+#[path = "server/tests.rs"]
 mod tests;

@@ -13,15 +13,20 @@ mod app_usage;
 mod calendar;
 mod calls;
 mod clipboard;
+mod dropzone;
 #[path = "../../isle-daemon/src/http.rs"]
 mod http;
 mod media;
 mod notifications;
 mod screen;
 mod settings;
+mod share;
+mod shelf;
 mod store;
 mod tasks;
+mod thumbs;
 mod timer;
+mod uri;
 mod usage;
 
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -39,6 +44,9 @@ use crate::media::lyrics::{self, Lyrics, LyricsStatus, TrackQuery};
 use crate::settings::Settings;
 use crate::tasks::Tasks;
 use crate::timer::Timer;
+
+/// The app, for the parts that tell the island from threads of their own (phone sharing).
+static HANDLE: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
 
 /// The window the island lives in: room for the open island (600 × 202 CSS px), its 22 px shoulders,
 /// a spring's overshoot, and the alerts and assistant that hang lower.
@@ -70,6 +78,8 @@ struct App {
     app_usage: Arc<app_usage::Usage>,
     calls: Arc<calls::Calls>,
     clipboard: Arc<clipboard::Clipboard>,
+    shelf: Arc<shelf::ShelfStore>,
+    share: Arc<share::Share>,
 }
 
 /// Every interface's state at once, as the extension reads them when `isled` appears.
@@ -90,6 +100,8 @@ fn snapshot(app: tauri::State<'_, Arc<App>>) -> Value {
         "eventsSoon": app.events_soon.lock().unwrap().clone(),
         "call": app.calls.state(),
         "clipboard": app.clipboard.items(),
+        "shelf": app.shelf.items(),
+        "share": app.share.state(),
         "fullscreen": screen::fullscreen_now(),
     })
 }
@@ -255,6 +267,30 @@ fn call(handle: AppHandle, app: tauri::State<'_, Arc<App>>, interface: String, m
                 let _ = handle.emit("clipboard", app.clipboard.items());
             }
         }
+        "Shelf1" => {
+            let changed = match method.as_str() {
+                "Remove" => app.shelf.remove(arg["uri"].as_str().unwrap_or_default()),
+                "Clear" => app.shelf.clear(),
+                "Refresh" => app.shelf.refresh(),
+                _ => false,
+            };
+            if changed {
+                shelf_changed(&handle, &app);
+            }
+        }
+        "Share1" => {
+            let id = arg["id"].as_str().unwrap_or_default();
+            match method.as_str() {
+                "Stop" => app.share.stop(),
+                "Answer" => {
+                    app.share.answer(id, arg["allow"].as_bool().unwrap_or(false));
+                }
+                "Remove" => {
+                    app.share.remove(id);
+                }
+                _ => warn!("no {method} in Share1"),
+            }
+        }
         // The Usage page opened: fresher numbers, at most every two minutes.
         "Usage1" if method == "Refresh" => app.usage_refresh.ask(),
         // The user's answer to a permission: "allow", "always" or "deny".
@@ -305,6 +341,132 @@ async fn clipboard_copy(
         });
     }
     Ok(copied)
+}
+
+/// Tells every window of the shelf's files, and drops the previews of files gone from it.
+fn shelf_changed(handle: &AppHandle, app: &App) {
+    let _ = handle.emit("shelf", app.shelf.items());
+    let items = app.shelf.list();
+    thread::spawn(move || shelf::tidy_previews(&items));
+}
+
+/// Puts files on the Files tab by path; why some could not go on, as `refused`: "room" or "local".
+#[tauri::command]
+fn shelf_add(handle: AppHandle, app: tauri::State<'_, Arc<App>>, paths: Vec<String>) -> Value {
+    let paths: Vec<std::path::PathBuf> = paths.iter().map(std::path::PathBuf::from).collect();
+    let (added, refused) = app.shelf.add(&paths);
+    if added {
+        shelf_changed(&handle, &app);
+    }
+    let refused = refused.map(|why| match why {
+        shelf::Refused::Full => "room",
+        shelf::Refused::NotLocal => "local",
+    });
+    json!({"added": added, "refused": refused})
+}
+
+/// A Files tab tile's preview: `{image, whole}` or `{icon}`.
+#[tauri::command]
+async fn shelf_preview(uri: String) -> Result<Value, ()> {
+    Ok(shelf::preview(&uri))
+}
+
+/// Copies a file on the shelf, to paste into any app.
+#[tauri::command]
+fn shelf_copy(uri: String) -> bool {
+    uri::to_path(&uri).is_some_and(|path| clipboard::imp::set_files(&[path.to_string_lossy().into_owned()]))
+}
+
+/// The island's shape now (x, y, width, height in CSS px of its window), where files dragged in are taken.
+#[tauri::command]
+fn set_drop_area(window: tauri::WebviewWindow, rect: [f64; 4]) {
+    if let (Ok(origin), Ok(scale)) = (window.inner_position(), window.scale_factor()) {
+        dropzone::set_area(rect, (origin.x, origin.y), scale);
+    }
+}
+
+/// Puts text on the clipboard (the phone's link).
+#[tauri::command]
+fn copy_text(text: String) -> bool {
+    clipboard::imp::set_text(&text)
+}
+
+/// Opens a file on the shelf in its app.
+#[tauri::command]
+fn shelf_open(uri: String) {
+    if let Some(path) = uri::to_path(&uri) {
+        let _ = std::process::Command::new("explorer").arg(path).spawn();
+    }
+}
+
+/// Saves a file the Shelf keeps itself into Downloads and shows it there; the words for the island when it can't.
+#[tauri::command]
+async fn shelf_save(app: tauri::State<'_, Arc<App>>, uri: String) -> Result<String, String> {
+    let path = uri::to_path(&uri).filter(|_| app.shelf.has(&uri)).ok_or("It is no longer on the Shelf")?;
+    let saved = shelf::save_to_downloads(&path).map_err(|err| format!("Couldn’t save it: {err}"))?;
+    let _ = std::process::Command::new("explorer").arg(format!("/select,{}", saved.display())).spawn();
+    Ok(saved.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default())
+}
+
+/// Starts dragging files on the shelf out of the island, into any app that takes files.
+#[tauri::command]
+fn shelf_drag(window: tauri::WebviewWindow, uris: Vec<String>) {
+    let paths: Vec<std::path::PathBuf> =
+        uris.iter().filter_map(|uri| uri::to_path(uri)).filter(|path| path.exists()).collect();
+    let (Some(first), false) = (uris.first(), paths.is_empty()) else {
+        return;
+    };
+    // The tile's preview under the pointer, else Isle's own icon.
+    let picture = std::fs::read(shelf::previews_dir().join(format!("{:x}.png", md5::compute(first))))
+        .unwrap_or_else(|_| include_bytes!("../icons/tray.png").to_vec());
+    let source = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        let item = drag::DragItem::Files(paths);
+        log::info!("dragging a file out of the island");
+        let done = |result: drag::DragResult, _| log::info!("the drag out ended: {result:?}");
+        if let Err(err) = drag::start_drag(&source, item, drag::Image::Raw(picture), done, drag::Options::default()) {
+            warn!("could not drag files from the shelf: {err}");
+        }
+    });
+}
+
+/// Puts a clipboard picture (as a copy of its own) or copied files on the Files tab.
+#[tauri::command]
+fn clipboard_to_shelf(handle: AppHandle, app: tauri::State<'_, Arc<App>>, id: u64) -> Value {
+    let paths = match app.clipboard.content(id) {
+        Some(clipboard::Content::Image(image)) => {
+            let stamp = chrono::Local::now().format("%Y-%m-%d at %H.%M.%S");
+            let copy = shelf::own_path(&format!("Clipboard image {stamp}"), "png");
+            if std::fs::copy(&image, &copy).is_err() {
+                return json!({"added": false});
+            }
+            vec![copy]
+        }
+        Some(clipboard::Content::Files(paths)) => paths.into_iter().map(std::path::PathBuf::from).collect(),
+        _ => return json!({"added": false}),
+    };
+    let (added, refused) = app.shelf.add(&paths);
+    // A copy that didn't fit goes.
+    for path in paths.iter().filter(|path| shelf::is_copy(path) && !app.shelf.has(&uri::from_path(path))) {
+        let _ = std::fs::remove_file(path);
+    }
+    if added {
+        shelf_changed(&handle, &app);
+    }
+    json!({"added": added, "refused": refused.is_some()})
+}
+
+/// Starts sharing the Shelf with a phone; the words for the island when it can't.
+#[tauri::command]
+async fn share_start(app: tauri::State<'_, Arc<App>>) -> Result<(), String> {
+    let share = app.share.clone();
+    share.start().await
+}
+
+/// The session's address and QR code, `{url, qr}`, while sharing.
+#[tauri::command]
+fn share_code(app: tauri::State<'_, Arc<App>>) -> Option<Value> {
+    app.share.code()
 }
 
 /// A program's or a file's icon as a `data:` URL, or "".
@@ -583,8 +745,13 @@ fn watch_clock(handle: AppHandle, app: Arc<App>) {
 /// through while the pointer is off the island, so the page could not see it otherwise.
 fn watch_pointer(window: tauri::WebviewWindow) {
     let mut last = (f64::NAN, f64::NAN);
+    let mut drops = dropzone::Watch::default();
     loop {
         thread::sleep(Duration::from_millis(16));
+        // Something dragged onto the island from elsewhere: the drop zone lies over it until the button is let go.
+        if let Some(area) = drops.poll() {
+            let _ = window.run_on_main_thread(move || dropzone::imp::place(area));
+        }
         let (Ok(cursor), Ok(origin), Ok(scale)) = (
             window.cursor_position(),
             window.inner_position(),
@@ -616,9 +783,21 @@ fn main() {
         let _ = settings::autostart::set(false);
         return;
     }
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // An installed Isle has no console: what it says goes to isle.log in its folder, begun afresh each start; the
+    // run before stays as isle-previous.log, so starting Isle again after trouble keeps what led to it.
+    let mut logger = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    if !cfg!(debug_assertions) && std::env::var_os("RUST_LOG").is_none() {
+        let dir = store::data_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::rename(dir.join("isle.log"), dir.join("isle-previous.log"));
+        if let Ok(file) = std::fs::File::create(dir.join("isle.log")) {
+            logger.target(env_logger::Target::Pipe(Box::new(file)));
+        }
+    }
+    logger.init();
     log::info!("Isle {} starting", env!("CARGO_PKG_VERSION"));
     let (wish_tx, wish_rx) = mpsc::channel();
+    let shelf = Arc::new(shelf::ShelfStore::load());
     let app = Arc::new(App {
         timer: Timer::load(),
         tasks: Tasks::load(),
@@ -637,6 +816,15 @@ fn main() {
         app_usage: Arc::new(app_usage::Usage::load()),
         calls: Arc::default(),
         clipboard: Arc::new(clipboard::Clipboard::load()),
+        shelf: shelf.clone(),
+        share: share::Share::new(
+            shelf,
+            Arc::new(|key: &str, value: Value| {
+                if let Some(handle) = HANDLE.get() {
+                    let _ = handle.emit(key, value);
+                }
+            }),
+        ),
     });
 
     tauri::Builder::default()
@@ -662,6 +850,17 @@ fn main() {
             clipboard_search,
             clipboard_copy,
             file_icon,
+            shelf_add,
+            shelf_preview,
+            shelf_copy,
+            shelf_open,
+            copy_text,
+            set_drop_area,
+            shelf_save,
+            shelf_drag,
+            clipboard_to_shelf,
+            share_start,
+            share_code,
             join_meeting
         ])
         // The clipboard cards' thumbnails.
@@ -716,6 +915,17 @@ fn main() {
             first_run();
 
             let handle = tauri_app.handle().clone();
+            let _ = HANDLE.set(handle.clone());
+            // Files dragged onto the island land on Isle's own drop zone (dropzone.rs), made here on the main thread.
+            let drop_window = window.clone();
+            let island = window.hwnd().map_or(0, |hwnd| hwnd.0 as isize);
+            dropzone::imp::create(island, Box::new(move |kind, paths, point| {
+                if kind != "over" {
+                    log::info!(target: "isle::dropzone", "file drag: {kind} {paths:?}");
+                }
+                let origin = drop_window.inner_position().map(|origin| (origin.x, origin.y)).unwrap_or_default();
+                let _ = drop_window.emit("fileDrag", dropzone::imp::payload(kind, paths, point, origin));
+            }));
             let pointer_window = window.clone();
             thread::spawn(move || watch_pointer(pointer_window));
             let (screen_window, screen_app) = (window.clone(), app.clone());

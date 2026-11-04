@@ -898,7 +898,11 @@ button {
 
 /* ── Shelf (shelf.js): tabs, filters and search in one bar, cards below ── */
 
-.isle-shelf { flex-direction: column; gap: 8px; }
+/* The tab's bar and content in a column; while sharing, the phone's code beside it, the page's full height. */
+.isle-shelf { flex-direction: row; gap: 16px; }
+.isle-shelf-column { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.isle-shelf-clips { display: flex; flex: 1 1 auto; min-width: 0; }
+.isle-shelf-clips[hidden], .isle-shelf-files[hidden], .isle-phone[hidden], .isle-phone-code[hidden] { display: none; }
 .isle-shelf-bar { display: flex; gap: 8px; align-items: center; flex: none; }
 .isle-shelf-controls { display: flex; gap: 8px; align-items: center; flex: 1 1 auto; min-width: 0; }
 .isle-shelf-spacer { flex: 1 1 auto; }
@@ -998,3 +1002,122 @@ button {
 #isleIsland.isle-translucent .isle-clip:hover { background-color: rgba(255, 255, 255, 0.12); }
 #isleIsland.isle-translucent .isle-clip-thumb { background-color: rgba(255, 255, 255, 0.1); }
 #isleIsland.isle-translucent .isle-clip-feedback { background-color: rgba(20, 20, 26, 0.9); }
+
+/* ── Shelf: Files tab (files.js) ── */
+
+.isle-shelf-hint {
+  flex: 1 1 auto; min-width: 0; text-align: right; font-size: 12px; color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 180ms;
+}
+.isle-shelf-hint.active { color: #ffffff; font-weight: 600; }
+.isle-shelf-end { justify-content: flex-end; }
+.isle-shelf-phone { display: flex; align-items: center; gap: 5px; padding: 5px 12px 5px 10px; flex: none; }
+.isle-shelf-phone:disabled { opacity: 0.5; }
+
+.isle-shelf-files {
+  position: relative; flex: 1 1 auto; min-width: 0; display: flex; align-items: center;
+  border-radius: 16px; border: 1px dashed transparent; box-sizing: border-box;
+  transition: border-color 150ms, background-color 150ms;
+}
+/* An empty shelf, or a file on its way: a dashed rounded zone to drop on. */
+.isle-shelf-files.zone { border-color: rgba(255, 255, 255, 0.22); background-color: rgba(255, 255, 255, 0.025); }
+.isle-shelf-files.near {
+  border-color: rgba(255, 255, 255, 0.35); background-color: rgba(255, 255, 255, 0.035);
+  background-image: radial-gradient(ellipse at 50% 130%, rgba(110, 122, 255, 0.35), rgba(138, 92, 255, 0.1) 55%, transparent 75%);
+}
+.isle-shelf-files.over { border-color: rgba(255, 255, 255, 0.65); background-color: rgba(255, 255, 255, 0.06); }
+.isle-shelf-files.refused { border-color: rgba(255, 92, 92, 0.6); background-image: none; }
+.isle-shelf-files.landed { animation: isle-landed 650ms ease-out; }
+@keyframes isle-landed { from { border-color: rgba(255, 255, 255, 0.9); } }
+.isle-shelf-files .isle-empty { position: absolute; inset: 0; }
+.isle-shelf-files .isle-empty[hidden], .isle-shelf-tiles[hidden] { display: none; }
+
+.isle-shelf-tiles { display: flex; gap: 6px; padding: 0 4px; }
+.isle-shelf-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; width: 84px; padding: 6px 0;
+  border-radius: 14px; color: #ffffff; transition: background-color 120ms; outline: none;
+}
+.isle-shelf-tile:hover { background-color: #1c1c1e; }
+.isle-shelf-tile:focus-visible { background-color: rgba(255, 255, 255, 0.1); }
+.isle-shelf-frame { position: relative; width: 84px; height: 58px; flex: none; }
+.isle-shelf-preview, .isle-shelf-copied {
+  position: absolute; left: 16px; top: 6px; width: 52px; height: 52px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+}
+.isle-shelf-preview .isle-shelf-generic { opacity: 0.63; }
+.isle-shelf-preview.thumbnail { background-color: #2c2c2e; background-size: cover; background-position: center; }
+/* A document's page, whole on a clear square, as in Explorer. */
+.isle-shelf-preview.thumbnail.whole {
+  background-color: transparent; border-radius: 0; background-size: contain; background-repeat: no-repeat;
+}
+.isle-shelf-icon { width: 46px; height: 46px; }
+.isle-shelf-copied { background-color: rgba(0, 0, 0, 0.6); opacity: 0; transition: opacity 150ms; pointer-events: none; }
+.isle-shelf-copied.shown { opacity: 1; }
+/* Always there, so a file can always be taken off the shelf. */
+.isle-shelf-remove {
+  position: absolute; top: 0; left: 56px; width: 21px; height: 21px; padding: 0; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center; color: #ffffff; background-color: #3a3a3c;
+}
+.isle-shelf-remove:hover { background-color: #5a5a5e; }
+/* The save button mirrors the remove one over the other corner, shown under the pointer. */
+.isle-shelf-save { left: 7px; opacity: 0; transition: opacity 120ms; }
+.isle-shelf-tile:hover .isle-shelf-save { opacity: 1; }
+.isle-shelf-name {
+  width: 76px; height: 2.5em; font-size: 12px; line-height: 1.25; text-align: center; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere;
+}
+
+/* ── Shelf: Phone tab (phone.js) ── */
+
+.isle-phone-code { flex: none; align-self: flex-start; }
+.isle-phone { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.isle-phone [hidden] { display: none; }
+.isle-grow { flex: 1 1 auto; }
+.isle-phone-title { font-size: 15px; font-weight: 600; letter-spacing: -0.1px; padding-bottom: 6px; }
+.isle-phone-steps { display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; }
+.isle-phone-step { display: flex; gap: 8px; align-items: flex-start; }
+.isle-phone-step-number {
+  width: 16px; height: 16px; border-radius: 8px; flex: none; background-color: rgba(255, 255, 255, 0.14);
+  display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700;
+  font-feature-settings: "tnum";
+}
+.isle-phone-step-text { font-size: 12px; color: rgba(255, 255, 255, 0.82); }
+.isle-phone-warning { color: #ff9f0a; }
+.isle-phone-hint, .isle-phone-copy-text { font-size: 12px; color: rgba(255, 255, 255, 0.55); }
+.isle-phone-rows { display: flex; flex-direction: column; }
+.isle-phone-row { display: flex; align-items: center; padding-bottom: 6px; transition: opacity 200ms; }
+.isle-phone-row.gone { opacity: 0; }
+.isle-phone-status, .isle-phone-ask, .isle-phone-copy { gap: 8px; }
+.isle-phone-ask-words { flex: 1 1 auto; min-width: 0; }
+.isle-phone-dot { width: 7px; height: 7px; border-radius: 4px; flex: none; background-color: rgba(255, 255, 255, 0.35); }
+.isle-phone-dot.on { background-color: #30d158; }
+.isle-phone-status-text { flex: 1 1 auto; min-width: 0; font-size: 12px; font-weight: 600; }
+.isle-phone-leaving .isle-phone-status-text,
+.isle-phone-away .isle-phone-status-text { font-weight: 400; color: rgba(255, 255, 255, 0.55); }
+.isle-phone-note { display: flex; gap: 6px; color: #ff9f0a; padding-bottom: 6px; }
+.isle-phone-note-text { font-size: 12px; color: #ff9f0a; }
+.isle-phone-copy { display: flex; align-items: center; }
+.isle-phone-copy-text { flex: 1 1 auto; }
+.isle-phone-code-text { font-size: 13px; font-weight: 700; font-feature-settings: "tnum"; }
+.isle-phone-remove { padding: 4px; border-radius: 999px; background-color: #2c2c2e; display: flex; }
+.isle-phone-remove:hover { background-color: #3a3a3c; }
+
+#isleIsland.isle-translucent .isle-shelf-hint { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-shelf-hint.active { color: #ffffff; }
+#isleIsland.isle-translucent .isle-shelf-tile:hover { background-color: rgba(255, 255, 255, 0.1); }
+#isleIsland.isle-translucent .isle-shelf-preview.thumbnail { background-color: rgba(255, 255, 255, 0.1); }
+#isleIsland.isle-translucent .isle-shelf-preview.thumbnail.whole { background-color: transparent; }
+#isleIsland.isle-translucent .isle-shelf-remove { background-color: rgba(70, 72, 80, 0.92); }
+#isleIsland.isle-translucent .isle-shelf-remove:hover { background-color: rgba(98, 100, 110, 0.95); }
+#isleIsland.isle-translucent .isle-phone-remove { background-color: rgba(255, 255, 255, 0.14); }
+#isleIsland.isle-translucent .isle-phone-remove:hover { background-color: rgba(255, 255, 255, 0.22); }
+#isleIsland.isle-translucent .isle-phone-hint,
+#isleIsland.isle-translucent .isle-phone-copy-text,
+#isleIsland.isle-translucent .isle-phone-leaving .isle-phone-status-text,
+#isleIsland.isle-translucent .isle-phone-away .isle-phone-status-text { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-phone-step-text { color: rgba(255, 255, 255, 0.9); }
+#isleIsland.isle-translucent .isle-phone-step-number { background-color: rgba(255, 255, 255, 0.2); }
+#isleIsland.isle-translucent .isle-phone-dot.on { background-color: rgb(100, 220, 130); }
+#isleIsland.isle-translucent .isle-phone-note,
+#isleIsland.isle-translucent .isle-phone-note-text,
+#isleIsland.isle-translucent .isle-phone-warning { color: rgb(255, 183, 71); }

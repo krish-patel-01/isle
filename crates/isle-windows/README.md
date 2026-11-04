@@ -62,7 +62,12 @@ To work on the island's look without building: `python -m http.server -d crates/
 - **Shelf**: the clipboard history, as cards of text, links, images and files (20 recent, 10 pinned), kept in
   `%LOCALAPPDATA%\Isle\clipboard.json` and `clips`. Click a card to copy it; search with ← → and Enter to paste
   into the window behind; pin, send text to Reminders, or clear. Copies password managers mark as private, and
-  those from programs left out in Settings, are never kept. The Files tab is not ported yet.
+  those from programs left out in Settings, are never kept. Its Files tab holds six files: drag files onto the
+  island to park them, then drag a tile into any app, click it to copy the file, or double-click to open it. Press
+  **Phone** and scan the QR code to get the tray's files on your phone, or send photos and files from it, in the
+  phone's browser, on the same Wi-Fi; each phone is let in with Allow. The web server, its sessions and the page
+  are isled's own (`crates/isle-daemon/src/share`); it ends with Stop, when the screen locks, the PC sleeps or the
+  network changes. Windows may ask to let Isle through its firewall the first time.
 - **Settings**: a click on the tray icon, the gear in the open island, or starting Isle again. Isle starts with
   Windows once installed, hides over full-screen videos and games (not over maximized windows), and warns as an
   AI plan nears its limits.
@@ -72,6 +77,6 @@ Hooks talk to Isle over a local port; its number and a random key are in `%LOCAL
 
 ## Still to port
 
-The Shelf's Files tab, phone sharing and the voice assistant. The glass look is a
+The voice assistant. The glass look is a
 deep smoked tint here: Windows has no blur an always-on-top, never-active window can cut to the island's shape.
 `cargo tauri build` makes the installer (`target/release/bundle/nsis`).

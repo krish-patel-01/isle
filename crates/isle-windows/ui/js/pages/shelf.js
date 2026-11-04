@@ -1,14 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 zickrian
 
-// The Shelf page (gnome-extension/src/pages/shelf.js and clips.js): the clipboard history as cards, pinned first,
-// then newest. Click a card to copy it; on hover: pin, a hand-off to Reminders and ×. Filters by kind, a search
-// that opens into a field (← → move between cards, Enter pastes into the window behind), and Clear all. The
-// Files tab and sharing with a phone are not on Windows yet.
+// The Shelf page (gnome-extension/src/pages/shelf.js and clips.js). Clipboard: the history as cards, pinned first,
+// then newest. Click a card to copy it; on hover: pin, a hand-off (text to Reminders, pictures and files to Files)
+// and ×. Filters by kind, a search that opens into a field (← → move between cards, Enter pastes into the window
+// behind), and Clear all. Files: files dropped on the island (files.js). Phone, while sharing: a QR code to scan
+// (phone.js).
 
 import {daemon} from '../daemon.js';
 import {el, icon, iconButton} from '../widgets.js';
+import {FilesView, SHELF_CAPACITY} from './files.js';
 import {ago} from './notifications.js';
+import {PhoneCode, PhoneView} from './phone.js';
+
+// Phone has a tab only while sharing.
+const TABS = [
+    {name: 'clipboard', label: 'Clipboard'},
+    {name: 'files', label: 'Files'},
+    {name: 'phone', label: 'Phone'},
+];
+/** How long the hint says a file was added, or why sharing could not start. */
+const ADDED_MS = 2200;
+const SHARE_ERROR_MS = 5000;
 
 const {invoke} = window.__TAURI__.core;
 
@@ -96,8 +109,24 @@ export class ShelfPage {
         this._copied = [];
         this._flashing = null;
         this._active = false;
+        this._tab = 'clipboard';
+        /** A file is being dragged over the island, and over the drop zone. */
+        this._dropping = false;
+        this._dropOver = false;
+        this._hovered = null;
+        this._added = false;
+        this._note = null;
+        this._phoneSharing = false;
 
-        this.node.append(this._buildBar());
+        this._files = new FilesView();
+        this._files.onNote = text => this._showNote(text);
+        this._phone = new PhoneView();
+        this._phone.onAnswer = (id, allow) => daemon.call('Share1', 'Answer', {id, allow});
+        this._phone.onRemove = id => daemon.call('Share1', 'Remove', {id});
+        this._code = new PhoneCode();
+
+        this._column = el('div', 'isle-shelf-column', [this._buildBar()]);
+        this.node.append(this._column, this._code.node);
         this._strip = el('div', 'isle-clips');
         this._scroll = el('div', 'isle-clips-scroll', [this._strip]);
         // The wheel scrolls the cards sideways, rather than turning the page.
@@ -113,11 +142,214 @@ export class ShelfPage {
         this._emptyTitle = el('div', 'isle-empty-title');
         this._emptyHint = el('div', 'isle-empty-hint');
         this._empty = el('div', 'isle-empty', [this._emptyIcon, this._emptyTitle, this._emptyHint]);
-        this.node.append(el('div', 'isle-shelf-content', [this._scroll, this._empty]));
+        this._clips = el('div', 'isle-shelf-clips', [this._scroll, this._empty]);
+        this._column.append(el('div', 'isle-shelf-content', [this._clips, this._files.node, this._phone.node]));
 
         daemon.connect(() => this._update(), 'clipboard');
         daemon.connect(() => this._update(), 'settings');
+        daemon.connect(() => {
+            this._noticeNewFiles();
+            this._files.update();
+            this._syncRefusal();
+        }, 'shelf');
+        daemon.connect(() => this._syncShare(), 'share');
+        daemon.connect((_key, name) => this._showNote(`Received ${name}`), 'shareReceived');
         this._update();
+        this._syncShare();
+        this.showTab('clipboard');
+    }
+
+    // Tabs
+
+    /** Switches to tab `name`; the Phone tab only while sharing. */
+    showTab(name) {
+        if (name === 'phone' && !this._phoneSharing)
+            name = 'files';
+        this._tab = name;
+        for (const [tab, button] of this._tabButtons)
+            button.classList.toggle('checked', tab === name);
+        this._clips.hidden = name !== 'clipboard';
+        this._files.node.hidden = name !== 'files';
+        this._phone.node.hidden = name !== 'phone';
+        this._syncControls();
+        if (name !== 'files')
+            this._setAdded(false);
+    }
+
+    /** Each tab's controls in the bar, and the phone's code beside the Phone tab. */
+    _syncControls() {
+        const name = this._tab;
+        this._clipboardControls.hidden = name !== 'clipboard';
+        this._filesHint.hidden = name !== 'files';
+        this._phoneStart.hidden = name !== 'files' || this._phoneSharing;
+        this._phoneControls.hidden = name !== 'phone';
+        this._code.node.hidden = name !== 'phone';
+        this._updateFilesHint();
+    }
+
+    // Files
+
+    /** A file is being dragged over the island: say whether it can land. */
+    set dropping(dropping) {
+        this._dropping = dropping;
+        this._files.dropping = dropping;
+        if (!dropping) {
+            this._dropOver = this._files.dropOver = false;
+            this._hovered = null;
+        }
+        this._syncRefusal();
+    }
+
+    /** The files on their way (paths), and where the pointer is (CSS px in the window). */
+    dragOver(paths, x, y) {
+        if (paths?.length)
+            this._hovered = paths;
+        this._dropOver = this._dropping && this._files.contains(x, y);
+        this._files.dropOver = this._dropOver;
+        this._syncRefusal();
+    }
+
+    /** The drag ended over the island: adds the files if let go over the zone. Returns whether they were turned
+     * away (the island then shakes its head). */
+    async drop(paths, x, y) {
+        const over = this._tab === 'files' && this._files.contains(x, y);
+        const refused = over && Boolean(this._refusal);
+        this.dropping = false;
+        if (!over || refused || !paths?.length)
+            return refused;
+        const result = await invoke('shelf_add', {paths}).catch(() => null);
+        if (result?.added)
+            this._files.flashLanded();
+        if (result?.refused) {
+            this._showNote(result.refused === 'room' ? `Full · only ${SHELF_CAPACITY} fit` : 'Only files on this computer');
+            return true;
+        }
+        return false;
+    }
+
+    /** Why the files on their way can't all land: 'room' (more than fit) or null. Files are local on Windows. */
+    get _refusal() {
+        if (!this._dropping)
+            return null;
+        const shelf = this._files.items;
+        const fresh = this._hovered ? this._hovered.filter(path => !shelf.some(item => item.path === path)).length : 1;
+        return fresh > 0 && shelf.length + fresh > SHELF_CAPACITY ? 'room' : null;
+    }
+
+    _syncRefusal() {
+        this._files.refusal = this._refusal;
+        this._updateFilesHint();
+    }
+
+    /** A file just landed: the hint says so a moment. */
+    _noticeNewFiles() {
+        const uris = (daemon.state.shelf ?? []).map(item => item.uri);
+        const known = this._shelved;
+        this._shelved = uris;
+        if (known && uris.some(uri => !known.includes(uri)) && this._tab === 'files') {
+            this._setAdded(true);
+            clearTimeout(this._addedTimer);
+            this._addedTimer = setTimeout(() => this._setAdded(false), ADDED_MS);
+        }
+    }
+
+    _setAdded(added) {
+        this._added = added;
+        this._updateFilesHint();
+    }
+
+    /** A line for the files hint for a moment (saved, received, couldn't share). */
+    _showNote(text) {
+        this._note = text;
+        this._updateFilesHint();
+        clearTimeout(this._noteTimer);
+        this._noteTimer = setTimeout(() => {
+            this._note = null;
+            this._updateFilesHint();
+        }, SHARE_ERROR_MS);
+    }
+
+    /** Says what the Files tab is for, and when it is full. */
+    _updateFilesHint() {
+        const count = this._files.items.length;
+        const full = count >= SHELF_CAPACITY;
+        const refusal = this._refusal;
+        let text;
+        if (this._note && !this._dropping)
+            text = this._note;
+        else if (count === 0 && !this._added)
+            text = '';
+        else if (refusal && full)
+            text = 'Full · remove a file first';
+        else if (refusal)
+            text = `Only ${SHELF_CAPACITY - count} more fit`;
+        else if (this._dropping)
+            text = this._dropOver ? 'Release to add it' : 'Drop to keep it on the shelf';
+        else if (this._added)
+            text = 'Added · click to copy, or drag it into any app';
+        else if (full)
+            text = 'Full · remove a file to add another';
+        else
+            text = this._files.items.some(item => item.own)
+                ? `${count} of ${SHELF_CAPACITY} · click to copy, ↓ to save, or drag out`
+                : `${count} of ${SHELF_CAPACITY} · click to copy, or drag into any app`;
+        this._filesHint.textContent = text;
+        this._filesHint.classList.toggle('active', this._dropping || this._added);
+    }
+
+    // Phone
+
+    /** Starts sharing with a phone; the Phone tab opens once Isle says it shares. */
+    async _startSharing() {
+        this._startingShare = true;
+        this._phoneStart.disabled = true;
+        try {
+            await invoke('share_start');
+        } catch (err) {
+            this._startingShare = false;
+            this._showNote(String(err));
+        }
+        this._phoneStart.disabled = false;
+        if (this._phoneSharing)
+            this._openPhoneTab();
+    }
+
+    _openPhoneTab() {
+        if (!this._startingShare)
+            return;
+        this._startingShare = false;
+        this.showTab('phone');
+    }
+
+    /** Follows Isle's sharing: the Phone tab comes and goes with it. */
+    async _syncShare() {
+        const state = daemon.state.share;
+        const sharing = Boolean(state?.active);
+        const changed = sharing !== this._phoneSharing;
+        this._phoneSharing = sharing;
+        this._tabButtons.get('phone').hidden = !sharing;
+        if (sharing)
+            this._phone.update(state);
+        else
+            this._phone.reset();
+        if (!sharing) {
+            this._codeSession = null;
+            this._code.rows = [];
+            this._phone.url = null;
+        } else if (state.session !== this._codeSession) {
+            this._codeSession = state.session;
+            const code = await invoke('share_code').catch(() => null);
+            if (code && this._codeSession === state.session) {
+                this._code.rows = code.qr ?? [];
+                this._phone.url = code.url ?? null;
+            }
+        }
+        if (sharing && this._startingShare)
+            this._openPhoneTab();
+        else if (!sharing && this._tab === 'phone')
+            this.showTab('files');
+        else if (changed)
+            this._syncControls();
     }
 
     get preferredWidth() {
@@ -126,10 +358,15 @@ export class ShelfPage {
 
     // Building
 
-    /** The tab, then the clipboard's controls: filters, search and Clear. */
+    /** The tabs, then the controls of the tab shown: filters, search and Clear; the files hint and Phone; Stop. */
     _buildBar() {
-        const tab = el('button', 'isle-segment checked', ['Clipboard']);
-        const tabs = el('div', 'isle-segmented', [tab]);
+        this._tabButtons = new Map();
+        const tabs = el('div', 'isle-segmented', TABS.map(({name, label}) => {
+            const button = el('button', 'isle-segment', [label]);
+            button.addEventListener('click', () => this.showTab(name));
+            this._tabButtons.set(name, button);
+            return button;
+        }));
 
         this._filterButtons = new Map();
         const filters = el('div', 'isle-segmented isle-segmented-icons', FILTERS.map(filter => {
@@ -173,9 +410,21 @@ export class ShelfPage {
             daemon.call('Clipboard1', 'Clear');
         });
 
-        const controls = el('div', 'isle-shelf-controls',
+        this._clipboardControls = el('div', 'isle-shelf-controls',
             [filters, this._spacer, this._searchBox, this._searchButton, this._clear, this._confirm]);
-        return el('div', 'isle-shelf-bar', [tabs, controls]);
+
+        // Files: what the tab is for, and sharing with a phone.
+        this._filesHint = el('div', 'isle-shelf-hint');
+        this._phoneStart = el('button', 'isle-pill isle-pill-small isle-shelf-phone',
+            [icon('isle-smartphone-symbolic', 13), el('span', '', ['Phone'])]);
+        this._phoneStart.setAttribute('aria-label', 'Share the Shelf with your phone');
+        this._phoneStart.addEventListener('click', () => this._startSharing());
+
+        // Phone: Stop, at the end.
+        const stop = el('button', 'isle-pill isle-pill-small', ['Stop']);
+        stop.addEventListener('click', () => daemon.call('Share1', 'Stop'));
+        this._phoneControls = el('div', 'isle-shelf-controls isle-shelf-end', [stop]);
+        return el('div', 'isle-shelf-bar', [tabs, this._clipboardControls, this._filesHint, this._phoneStart, this._phoneControls]);
     }
 
     // Search
@@ -471,6 +720,17 @@ export class ShelfPage {
                 daemon.call('todo', 'Add', {title});
                 this._flash(item, 'isle-tasks', 'Added to Reminders');
             }));
+        } else {
+            actions.push(button('isle-shelf', 'Add to the Files tab', async () => {
+                const shelf = daemon.state.shelf ?? [];
+                const fresh = item.kind === 'image' ? 1 : item.paths.filter(path => !shelf.some(file => file.path === path)).length;
+                if (shelf.length + fresh > SHELF_CAPACITY) {
+                    this._flash(item, 'isle-shelf', 'Files is full');
+                    return;
+                }
+                const result = await invoke('clipboard_to_shelf', {id: item.id}).catch(() => null);
+                this._flash(item, 'isle-shelf', result?.added ? 'Added to Files' : 'Files is full');
+            }));
         }
         actions.push(button('isle-close-symbolic', 'Remove', () => {
             // Removed at once; the card shrinks away until the list redraws.
@@ -505,8 +765,12 @@ export class ShelfPage {
         this._active = active;
         if (active) {
             this._refreshAges();
+            // Files moved or deleted since leave the tray.
+            daemon.call('Shelf1', 'Refresh');
             return;
         }
+        this._setAdded(false);
+        this.dropping = false;
         const items = daemon.state.clipboard ?? [];
         for (const id of this._copied.filter(copied => items.some(item => item.id === copied)))
             daemon.call('Clipboard1', 'Touch', {id});

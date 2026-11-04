@@ -284,57 +284,14 @@ pub fn thumb_file(name: &str) -> Option<Vec<u8>> {
     fs::read(store::data_dir().join("clips").join(name)).ok()
 }
 
-/// A path as a `file://` URI, as GNOME's Files writes them.
+/// A path as a `file://` URI.
 pub fn uri_of_path(path: &str) -> String {
-    let slashed = path.replace('\\', "/");
-    // A share (\\server\share\…) keeps its server as the URI's host.
-    let (host, rest) = match slashed.strip_prefix("//") {
-        Some(share) => share.split_once('/').map_or((share, ""), |(host, rest)| (host, rest)),
-        None => ("", slashed.as_str()),
-    };
-    let mut uri = format!("file://{host}");
-    if !rest.starts_with('/') {
-        uri.push('/');
-    }
-    for byte in rest.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-._~/:!$&'()*+,;=@".contains(&byte) {
-            uri.push(byte as char);
-        } else {
-            uri.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    uri
+    crate::uri::from_path(Path::new(path))
 }
 
 /// A `file://` URI's path on Windows.
 pub fn path_of_uri(uri: &str) -> String {
-    let rest = uri.strip_prefix("file://").unwrap_or(uri);
-    let (host, path) = rest.split_once('/').map_or((rest, ""), |(host, path)| (host, path));
-    let bytes = path.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let escaped = (bytes[i] == b'%')
-            .then(|| bytes.get(i + 1..i + 3))
-            .flatten()
-            .and_then(|hex| u8::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok());
-        match escaped {
-            Some(byte) => {
-                decoded.push(byte);
-                i += 3;
-            }
-            None => {
-                decoded.push(bytes[i]);
-                i += 1;
-            }
-        }
-    }
-    let path = String::from_utf8_lossy(&decoded).replace('/', "\\");
-    if host.is_empty() || host.eq_ignore_ascii_case("localhost") {
-        path
-    } else {
-        format!("\\\\{host}\\{path}")
-    }
+    crate::uri::to_path(uri).map(|path| path.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 /// Whether the program at `path` is one whose copies are left out: a known password manager, or one of

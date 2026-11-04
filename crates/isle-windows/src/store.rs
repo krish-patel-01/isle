@@ -53,3 +53,9 @@ fn write_atomic<T: Serialize>(path: &Path, value: &T) -> anyhow::Result<()> {
     fs::rename(&tmp, path)?;
     Ok(())
 }
+
+/// Makes a folder for Isle's own files (phone sharing's, as isled's store has it); on Windows the user's
+/// AppData is theirs alone already.
+pub fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dir)
+}

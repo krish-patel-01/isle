@@ -171,7 +171,12 @@ pub mod autostart {
     /// Whether Windows starts this Isle at sign-in.
     #[cfg(windows)]
     pub fn enabled() -> bool {
-        read(RUN, NAME).is_some_and(|value| value.eq_ignore_ascii_case(&command()))
+        let value = read(RUN, NAME);
+        let this = command();
+        if let Some(value) = value.as_ref().filter(|value| !value.eq_ignore_ascii_case(&this)) {
+            log::info!("Windows starts {value} at sign-in, not this Isle ({this})");
+        }
+        value.is_some_and(|value| value.eq_ignore_ascii_case(&this))
     }
 
     /// Whether Windows shows the time with AM and PM (Settings → Time & language → Region).
@@ -218,6 +223,7 @@ pub mod autostart {
 
     #[cfg(windows)]
     pub fn set(on: bool) -> anyhow::Result<()> {
+        log::info!("start with Windows: {on} ({})", command());
         use windows::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegDeleteKeyValueW, RegSetKeyValueW};
         use windows::core::PCWSTR;
         let (key, name) = (wide(RUN), wide(NAME));
