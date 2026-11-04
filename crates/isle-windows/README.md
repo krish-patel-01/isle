@@ -59,6 +59,10 @@ To work on the island's look without building: `python -m http.server -d crates/
   and a Call tab with its length, mute (the microphone's, for every app), a way back, and a live preview of the
   call's window drawn by Windows. Video calls are told apart where Windows still records camera use in the
   registry; insider builds that keep it in a private database show every call as a voice call.
+- **Shelf**: the clipboard history, as cards of text, links, images and files (20 recent, 10 pinned), kept in
+  `%LOCALAPPDATA%\Isle\clipboard.json` and `clips`. Click a card to copy it; search with ← → and Enter to paste
+  into the window behind; pin, send text to Reminders, or clear. Copies password managers mark as private, and
+  those from programs left out in Settings, are never kept. The Files tab is not ported yet.
 - **Settings**: a click on the tray icon, the gear in the open island, or starting Isle again. Isle starts with
   Windows once installed, hides over full-screen videos and games (not over maximized windows), and warns as an
   AI plan nears its limits.
@@ -68,6 +72,6 @@ Hooks talk to Isle over a local port; its number and a random key are in `%LOCAL
 
 ## Still to port
 
-The clipboard shelf and files tray, phone sharing and the voice assistant. The glass look is a
+The Shelf's Files tab, phone sharing and the voice assistant. The glass look is a
 deep smoked tint here: Windows has no blur an always-on-top, never-active window can cut to the island's shape.
 `cargo tauri build` makes the installer (`target/release/bundle/nsis`).

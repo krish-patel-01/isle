@@ -36,6 +36,8 @@ pub fn defaults() -> Map<String, Value> {
         "track-peek": false,
         "call-activity": true,
         "call-preview": true,
+        "clipboard-history": true,
+        "clipboard-ignored-apps": [],
         "usage-enabled": true,
         "usage-claude": true,
         "usage-codex": true,

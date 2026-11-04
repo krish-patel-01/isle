@@ -2266,6 +2266,7 @@ dependencies = [
  "chrono",
  "dirs",
  "env_logger",
+ "image",
  "isle-core",
  "log",
  "serde",

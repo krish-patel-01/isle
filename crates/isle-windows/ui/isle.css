@@ -895,3 +895,106 @@ button {
 #isleIsland.isle-glass-dark .isle-call-control { background-color: rgba(255, 255, 255, 0.1); box-shadow: none; }
 #isleIsland.isle-glass-dark .isle-call-control:hover { background-color: rgba(255, 255, 255, 0.15); }
 #isleIsland.isle-glass-dark .isle-call-control:active { background-color: rgba(255, 255, 255, 0.2); }
+
+/* ── Shelf (shelf.js): tabs, filters and search in one bar, cards below ── */
+
+.isle-shelf { flex-direction: column; gap: 8px; }
+.isle-shelf-bar { display: flex; gap: 8px; align-items: center; flex: none; }
+.isle-shelf-controls { display: flex; gap: 8px; align-items: center; flex: 1 1 auto; min-width: 0; }
+.isle-shelf-spacer { flex: 1 1 auto; }
+.isle-segmented-icons .isle-segment { padding: 3px 6px; display: flex; align-items: center; }
+.isle-segment.dimmed .isle-icon { opacity: 0.5; }
+.isle-shelf-search { flex: 1 1 auto; min-width: 0; padding: 5px 12px; gap: 6px; }
+.isle-shelf-search[hidden] { display: none; }
+.isle-shelf-field[hidden] { display: none; }
+.isle-shelf-search .isle-icon { color: rgba(255, 255, 255, 0.55); }
+.isle-shelf-field {
+  flex: 1 1 auto; min-width: 0; padding: 0; border: none; outline: none; background: none;
+  font: inherit; font-size: 12px; color: #ffffff;
+}
+.isle-shelf-field::placeholder { color: rgba(255, 255, 255, 0.45); }
+.isle-shelf-field::selection { background-color: rgba(255, 255, 255, 0.28); }
+.isle-shelf-confirm { padding: 5px 12px; }
+.isle-shelf-bar [hidden] { display: none; }
+.isle-button-round:disabled { opacity: 0.35; }
+
+.isle-shelf-content { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
+.isle-clips-scroll {
+  flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  -webkit-mask: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 18px), transparent 100%);
+  mask: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 18px), transparent 100%);
+  margin: 0 -12px; padding: 0 12px;
+}
+.isle-clips-scroll::-webkit-scrollbar { display: none; }
+.isle-clips-scroll[hidden], .isle-empty[hidden] { display: none; }
+.isle-clips { display: flex; gap: 8px; width: max-content; }
+
+.isle-clip {
+  position: relative; flex: none; width: 136px; height: 96px; box-sizing: content-box;
+  border-radius: 12px; border: 2px solid transparent; background-color: #1c1c1e; color: #ffffff;
+  overflow: hidden; transition: background-color 120ms, opacity 150ms, transform 150ms;
+}
+.isle-clip:hover { background-color: #242426; }
+/* The keyboard's choice, for Enter to paste. */
+.isle-clip.selected { border-color: #ffffff; }
+.isle-clip.removed { opacity: 0; transform: scale(0.9); pointer-events: none; }
+
+.isle-clip-header {
+  position: absolute; top: 0; left: 0; display: flex; align-items: center; gap: 5px; padding: 7px 9px;
+}
+.isle-clip-header img { display: block; }
+.isle-clip-age { font-size: 12px; color: rgba(255, 255, 255, 0.5); }
+.isle-clip-body {
+  position: absolute; inset: 0; display: flex; flex-direction: column; gap: 2px;
+  padding: 28px 10px 8px 10px; box-sizing: border-box; min-width: 0;
+}
+.isle-clip-text, .isle-clip-url {
+  font-size: 12px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
+  overflow-wrap: anywhere; line-height: 1.25;
+}
+.isle-clip-code { font-family: Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; }
+.isle-clip-host { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.isle-clip-url { color: rgba(255, 255, 255, 0.55); -webkit-line-clamp: 3; }
+.isle-clip-file-icon, .isle-clip-file-icon img, .isle-clip-file-icon .isle-icon { display: block; flex: none; width: 28px; height: 28px; }
+.isle-clip-files .isle-clip-body { gap: 0; line-height: 1.25; }
+.isle-clip-file-name { font-size: 12px; font-weight: 600; padding-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.isle-clip-subtle { font-size: 12px; color: rgba(255, 255, 255, 0.5); }
+
+/* Images fill the card; header and size sit on dark pills over them. */
+.isle-clip-layers { position: absolute; inset: 0; }
+.isle-clip-thumb {
+  position: absolute; inset: 0; border-radius: 12px; background-color: #2c2c2e;
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+}
+.isle-clip-image .isle-clip-header { margin: 5px; padding: 3px 7px; border-radius: 999px; background-color: rgba(0, 0, 0, 0.6); }
+.isle-clip-badge {
+  position: absolute; left: 0; bottom: 0; margin: 5px; padding: 2px 6px; border-radius: 999px;
+  background-color: rgba(0, 0, 0, 0.6); font-size: 11px; font-weight: 600;
+}
+
+.isle-clip-actions {
+  position: absolute; top: 0; right: 0; display: flex; gap: 4px; padding: 5px;
+  opacity: 0; transition: opacity 120ms;
+}
+.isle-clip:hover .isle-clip-actions { opacity: 1; }
+.isle-clip-action { padding: 4px; border-radius: 999px; background-color: #3a3a3c; display: flex; }
+.isle-clip-action:hover { background-color: #4a4a4c; }
+
+.isle-clip-feedback {
+  position: absolute; inset: 0; border-radius: 12px; background-color: rgba(28, 28, 30, 0.95);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; visibility: hidden; transition: opacity 200ms, visibility 0s 200ms;
+}
+.isle-clip-feedback.shown { opacity: 1; visibility: visible; transition: opacity 120ms; }
+.isle-clip-feedback-box { display: flex; flex-direction: column; align-items: center; }
+.isle-clip-feedback-label { font-size: 12px; font-weight: 700; padding-top: 4px; text-align: center; }
+
+#isleIsland.isle-translucent .isle-clip-age { color: rgba(255, 255, 255, 0.67); }
+#isleIsland.isle-translucent .isle-clip-url { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-clip-subtle { color: rgba(255, 255, 255, 0.67); }
+#isleIsland.isle-translucent .isle-clip-action { background-color: rgba(255, 255, 255, 0.2); }
+#isleIsland.isle-translucent .isle-clip-action:hover { background-color: rgba(255, 255, 255, 0.28); }
+#isleIsland.isle-translucent .isle-clip { background-color: rgba(255, 255, 255, 0.08); }
+#isleIsland.isle-translucent .isle-clip:hover { background-color: rgba(255, 255, 255, 0.12); }
+#isleIsland.isle-translucent .isle-clip-thumb { background-color: rgba(255, 255, 255, 0.1); }
+#isleIsland.isle-translucent .isle-clip-feedback { background-color: rgba(20, 20, 26, 0.9); }

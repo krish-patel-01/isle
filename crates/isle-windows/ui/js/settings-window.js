@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 zickrian
 
-// Isle's Settings window (gnome-extension/prefs.js): Island, Timer, AI Usage and About, in that order, with the
+// Isle's Settings window (gnome-extension/prefs.js): Island, Clipboard, Timer, AI Usage and About, in that order, with the
 // rows that mean something on Windows. Each row shows its setting and changes it at once; changes from elsewhere
 // (Reset, the island) show here as they happen.
 
@@ -213,6 +213,7 @@ const PAGES = [
     ['notifications', 'Notifications', 'isle-bell', 'The list to look back at, and its unread dot; alerts show either way'],
     ['focus', 'Timer', 'isle-timer', 'Pomodoro focus sessions and breaks'],
     ['reminders', 'Reminders', 'isle-tasks', 'Your to-do list'],
+    ['shelf', 'Shelf', 'isle-shelf', 'Clipboard history'],
     ['calendar', 'Calendar', 'isle-calendar', 'The month, its events and world clocks'],
 ];
 
@@ -429,6 +430,88 @@ function islandPage() {
     ]);
 }
 
+/** History on or off, clearing it, and the programs whose copies are never kept. */
+function clipboardPage() {
+    const keep = switchRow('clipboard-history', 'Keep clipboard history',
+        'Text, links, images and files you copy. Passwords from password managers are never kept.');
+    const clear = el('button', 'pill-button', ['Clear…']);
+    clear.addEventListener('click', event => {
+        event.stopPropagation();
+        confirm({
+            heading: 'Clear clipboard history?',
+            body: 'Everything you copied is removed. Pinned items stay.',
+            action: 'Clear',
+        }, () => daemon.call('Clipboard1', 'Clear'));
+    });
+    const history = group('Clipboard History', '', [keep, row('Clear history', 'Pinned items are kept', clear)]);
+    // The history lives on the Shelf page: with that page off, nothing is kept.
+    syncs.push(() => {
+        const off = (setting('hidden-pages') ?? []).includes('shelf');
+        keep.setSensitive(!off);
+        history.querySelector('.group-description').textContent = off ? 'Off while the Shelf page is off (Island → Pages).'
+            : 'The Shelf page shows it. Everything stays on this computer.';
+    });
+
+    // Programs by name ("keepass" for KeePass.exe), besides the password managers Isle knows.
+    const names = () => setting('clipboard-ignored-apps') ?? [];
+    const add = actionRow('Add a Program…', null, null, () => pickProgram(name => {
+        if (!names().includes(name))
+            set('clipboard-ignored-apps', [...names(), name]);
+    }));
+    add.querySelector('.row-texts').before(el('div', 'row-prefix', [icon('isle-plus-symbolic')]));
+    const ignored = group('Never Keep Copies From', 'Known password managers are left out from the start.', [add]);
+    syncs.push(() => {
+        ignored.querySelectorAll('.list > .program').forEach(node => node.remove());
+        for (const name of names()) {
+            const remove = el('button', 'round flat', [icon('isle-minus-symbolic')]);
+            remove.title = 'Keep copies from this program again';
+            remove.addEventListener('click', () => set('clipboard-ignored-apps', names().filter(other => other !== name)));
+            const node = row(name, `${name}.exe`, remove);
+            node.classList.add('program');
+            add.before(node);
+        }
+    });
+    return page('clipboard', 'Clipboard', 'isle-clipboard', [history, ignored]);
+}
+
+/** A dialog to name a program, from those copied from lately or typed; `pick` gets its name, lower case. */
+function pickProgram(pick) {
+    const field = el('input', 'search');
+    field.placeholder = 'Program name, or search those you copied from';
+    const results = el('div', 'results');
+    const close = () => scrim.remove();
+    const scrim = el('div', 'scrim', [el('div', 'dialog city-dialog', [el('h2', '', ['Add a Program']), field, results])]);
+    const choose = name => {
+        close();
+        pick(name.trim().toLowerCase().replace(/\.exe$/, ''));
+    };
+    // The programs in the clipboard history, by name.
+    const known = new Map();
+    for (const item of daemon.state.clipboard ?? []) {
+        const stem = item.app_id?.split('\\').pop()?.replace(/\.exe$/i, '');
+        if (stem && !known.has(stem))
+            known.set(stem, item.app_name || stem);
+    }
+    const show = () => {
+        const query = field.value.trim().toLowerCase();
+        const found = [...known].filter(([stem, name]) => !query || `${stem} ${name}`.toLowerCase().includes(query));
+        results.replaceChildren(...found.map(([stem, name]) => actionRow(name, `${stem}.exe`, null, () => choose(stem))));
+        if (query && !found.some(([stem]) => stem === query.replace(/\.exe$/, '')))
+            results.append(actionRow(`Add “${query.replace(/\.exe$/, '')}”`, 'Press Enter', null, () => choose(query)));
+    };
+    field.addEventListener('input', show);
+    field.addEventListener('keydown', event => {
+        if (event.key === 'Escape')
+            close();
+        else if (event.key === 'Enter' && field.value.trim())
+            choose(field.value);
+    });
+    scrim.addEventListener('click', event => event.target === scrim && close());
+    document.body.append(scrim);
+    show();
+    field.focus();
+}
+
 /** The timer's lengths live with the timer; changes are saved as typing pauses. */
 function timerPage() {
     let config = null, saveId = 0;
@@ -525,7 +608,7 @@ function aboutPage() {
 
 // The window
 
-const pages = [islandPage(), timerPage(), usagePage(), aboutPage()];
+const pages = [islandPage(), clipboardPage(), timerPage(), usagePage(), aboutPage()];
 const switcher = document.getElementById('switcher');
 const main = document.getElementById('pages');
 const buttons = pages.map(({name, title, iconName, node}) => {
