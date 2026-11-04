@@ -67,6 +67,7 @@ class Controller {
         notifications.onClose = () => this.collapse();
         const shelf = new ShelfPage();
         shelf.onClose = () => this.collapse();
+        this._shelf = shelf;
         const call = new CallPage();
         call.onClose = () => this.collapse();
         // A new call is what the island opens on next, whatever was picked before.
@@ -163,6 +164,9 @@ class Controller {
     async start() {
         await daemon.start();
         await listen('pointer', event => this._onPointer(event.payload));
+        // Files dragged onto the island: Isle's own drop zone over it says so (dropzone.rs), and Tauri where it can.
+        await listen('fileDrag', event => this._onDragDrop(event.payload));
+        await window.__TAURI__.webviewWindow.getCurrentWebviewWindow().onDragDropEvent(event => this._onDragDrop(event.payload));
         this._lastTrack = this._trackOf(daemon.state.nowPlaying);
         this._onCall = Boolean(daemon.state.call?.active);
         // Events due an alert before the page was there to hear of them (Isle starting just before one).
@@ -386,7 +390,7 @@ class Controller {
         const over = this._island.contains(x, y, open ? OPEN_SLACK_PX : 0);
         this._syncInteractive();
         if (open) {
-            if (over || this._typing)
+            if (over || this._typing || this._dragging)
                 this._cancel('collapse');
             else if (!this._timers.collapse)
                 this._later('collapse', COLLAPSE_DELAY_MS, () => this.collapse());
@@ -415,10 +419,17 @@ class Controller {
     _syncInteractive() {
         const {x, y} = this._pointer;
         const slack = this._presentation === 'expanded' ? OPEN_SLACK_PX : 0;
-        const interactive = this._typing || this._island.contains(x, y, slack);
+        const interactive = this._typing || this._dragging || this._island.contains(x, y, slack);
         if (interactive !== this._interactive) {
             this._interactive = interactive;
             invoke('set_interactive', {interactive});
+        }
+        // Where files dragged in are taken: the island as it is heading to be.
+        const r = this._island.targetRect;
+        const area = [r.x, r.y, r.width, r.height].map(Math.round);
+        if (area.join() !== this._dropArea?.join()) {
+            this._dropArea = area;
+            invoke('set_drop_area', {rect: area});
         }
     }
 
@@ -440,6 +451,36 @@ class Controller {
             return;
         this._presentation = 'expanded';
         this._present();
+    }
+
+    /** Files dragged onto the island (Windows hands the drop to the window once the pointer is over the island):
+     * it opens on the Shelf's Files tab to drop them on, as Isle does on GNOME. */
+    _onDragDrop({type, paths, position}) {
+        const ratio = window.devicePixelRatio || 1;
+        const [x, y] = position ? [position.x / ratio, position.y / ratio] : [-1, -1];
+        const shelf = this._shelf;
+        if (type === 'enter') {
+            // Left out in Settings: no shelf to drop on.
+            if (setting('hidden-pages')?.includes('shelf') || !paths?.length)
+                return;
+            this._dragging = true;
+            shelf.showTab('files');
+            this.expand();
+            this._expanded.showPageNamed('shelf');
+            shelf.dropping = true;
+            shelf.dragOver(paths, x, y);
+        } else if (!this._dragging) {
+            return;
+        } else if (type === 'over') {
+            this._cancel('collapse');
+            shelf.dragOver(null, x, y);
+        } else if (type === 'drop') {
+            this._dragging = false;
+            shelf.drop(paths, x, y);
+        } else {
+            this._dragging = false;
+            shelf.dropping = false;
+        }
     }
 
     collapse() {

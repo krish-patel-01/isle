@@ -26,7 +26,13 @@ isle-core.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 dirs.workspace = true
-image = { workspace = true, features = ["bmp"] }
+image = { workspace = true, features = ["bmp", "jpeg", "gif", "webp"] }
+httparse.workspace = true
+md5.workspace = true
+qrcode.workspace = true
+subtle.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
+drag = "2.1"
 env_logger.workspace = true
 log.workspace = true
 serde.workspace = true
@@ -35,7 +41,13 @@ ureq.workspace = true
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 
+[dev-dependencies]
+# Paused clocks, for phone sharing's tests (isled's, run here too).
+tokio = { workspace = true, features = ["test-util"] }
+
 [target.'cfg(windows)'.dependencies]
+# For the island's drop zone, a COM drop target of Isle's own (`#[implement]` names this crate).
+windows-core = "0.61"
 windows = { version = "0.61", features = [
     "Foundation",
     "Foundation_Collections",
@@ -57,6 +69,14 @@ windows = { version = "0.61", features = [
     "Win32_System_DataExchange",
     "Win32_System_Memory",
     "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_NetworkManagement_WiFi",
+    "Win32_Networking_WinSock",
+    "Win32_Security_Cryptography",
+    "Win32_System_StationsAndDesktops",
     "Win32_System_Registry",
     "Win32_Graphics_Gdi",
     "Win32_UI_Shell",
