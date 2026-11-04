@@ -11,6 +11,7 @@
 mod agents;
 mod app_usage;
 mod calendar;
+mod calls;
 #[path = "../../isle-daemon/src/http.rs"]
 mod http;
 mod media;
@@ -66,6 +67,7 @@ struct App {
     /// Alerts before events not yet begun, for a page that loads after they were sent.
     events_soon: Mutex<Vec<Value>>,
     app_usage: Arc<app_usage::Usage>,
+    calls: Arc<calls::Calls>,
 }
 
 /// Every interface's state at once, as the extension reads them when `isled` appears.
@@ -84,6 +86,7 @@ fn snapshot(app: tauri::State<'_, Arc<App>>) -> Value {
         "systemEvents": app.system_events.lock().unwrap().clone(),
         "notifications": app.notifications.state(),
         "eventsSoon": app.events_soon.lock().unwrap().clone(),
+        "call": app.calls.state(),
         "fullscreen": screen::fullscreen_now(),
     })
 }
@@ -166,6 +169,29 @@ fn show_settings(handle: &AppHandle) {
     if let Err(err) = built {
         warn!("could not open Settings: {err}");
     }
+}
+
+/// The call's mute button: mutes or unmutes the microphone, for every app.
+#[tauri::command]
+async fn call_mute(handle: AppHandle, app: tauri::State<'_, Arc<App>>) -> Result<(), ()> {
+    let state = app.calls.toggle_muted();
+    let _ = handle.emit("call", state);
+    Ok(())
+}
+
+/// Brings the call's window to the front.
+#[tauri::command]
+fn call_raise(app: tauri::State<'_, Arc<App>>) {
+    app.calls.raise();
+}
+
+/// Shows the call's window live at `rect` in the island (CSS pixels: x, y, width, height), or stops.
+#[tauri::command]
+fn call_preview(window: tauri::WebviewWindow, app: tauri::State<'_, Arc<App>>, rect: Option<[f64; 4]>) {
+    let Ok(dest) = window.hwnd() else { return };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let rect = rect.map(|r| r.map(|v| (v * scale).round() as i32));
+    app.calls.preview(dest.0 as isize, rect);
 }
 
 /// Shows or hides the island's window: hidden over a full-screen app, so a game or video runs undisturbed.
@@ -527,6 +553,7 @@ fn main() {
         notifications: Arc::default(),
         events_soon: Mutex::default(),
         app_usage: Arc::new(app_usage::Usage::load()),
+        calls: Arc::default(),
     });
 
     tauri::Builder::default()
@@ -546,6 +573,9 @@ fn main() {
             open_link,
             calendar_parse,
             app_usage_stats,
+            call_mute,
+            call_raise,
+            call_preview,
             join_meeting
         ])
         .setup(move |tauri_app| {
@@ -615,6 +645,17 @@ fn main() {
                     },
                     |note| {
                         let _ = posted_handle.emit("notificationPosted", note);
+                    },
+                );
+            });
+            let (call_handle, call_app) = (handle.clone(), app.clone());
+            thread::spawn(move || {
+                let calls = call_app.calls.clone();
+                calls::watch(
+                    &calls,
+                    || call_app.settings.lock().unwrap().bool("call-activity"),
+                    |state| {
+                        let _ = call_handle.emit("call", state);
                     },
                 );
             });

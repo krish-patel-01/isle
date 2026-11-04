@@ -420,6 +420,12 @@ function islandPage() {
             switchRow('lyrics-online', 'Lyrics', 'Look up the playing song’s lyrics on LRCLIB'),
             switchRow('chimes', 'Sounds', 'Chime when a focus session or break ends'),
         ]),
+        group('Calls', 'WhatsApp, Teams, Meet and other calls, in any app or browser.', [
+            switchRow('call-activity', 'Calls in the island', 'The call’s length, mute and a way back to it'),
+            depends(switchRow('call-preview', 'Live preview', 'See yourself and whoever you call, live in the open ' +
+                'island. Windows draws it from the call’s window; nothing is recorded'),
+            {enabled: () => setting('call-activity')}),
+        ]),
     ]);
 }
 
