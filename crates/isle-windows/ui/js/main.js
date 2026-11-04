@@ -10,6 +10,7 @@ import {daemon} from './daemon.js';
 import {ExpandedView} from './expanded.js';
 import {Island} from './island.js';
 import {AppsPage} from './pages/apps.js';
+import {CallPage} from './pages/call.js';
 import {CalendarPage} from './pages/calendar.js';
 import {MusicPage} from './pages/music.js';
 import {NotificationsPage} from './pages/notifications.js';
@@ -63,7 +64,15 @@ class Controller {
         }, 'eventSoon');
         const notifications = new NotificationsPage();
         notifications.onClose = () => this.collapse();
-        this._pages = [new MusicPage(), notifications, new TimerPage(), new RemindersPage(), calendar, new AppsPage(),
+        const call = new CallPage();
+        call.onClose = () => this.collapse();
+        // A new call is what the island opens on next, whatever was picked before.
+        daemon.connect((_key, state) => {
+            if (state?.active && !this._onCall)
+                queueMicrotask(() => this._expanded.showPageNamed('call'));
+            this._onCall = Boolean(state?.active);
+        }, 'call');
+        this._pages = [call, new MusicPage(), notifications, new TimerPage(), new RemindersPage(), calendar, new AppsPage(),
             new UsagePage()];
         this._expanded = new ExpandedView(this._pages, reshape);
         this._peek = new PeekView();
@@ -128,6 +137,12 @@ class Controller {
         this._typing = false;
         this._timers = {};
         this._island.onFrame = () => this._syncInteractive();
+        // A right click on the closed island brings the call to the front.
+        this._compact.node.addEventListener('contextmenu', event => {
+            event.preventDefault();
+            if (this._presentation === 'compact' && daemon.state.call?.active)
+                invoke('call_raise');
+        });
         // A click opens the closed island, also where Settings say it opens on click.
         this._compact.node.addEventListener('click', () => {
             if (this._presentation === 'compact' && !this._island.autoHidden)
@@ -146,6 +161,7 @@ class Controller {
         await daemon.start();
         await listen('pointer', event => this._onPointer(event.payload));
         this._lastTrack = this._trackOf(daemon.state.nowPlaying);
+        this._onCall = Boolean(daemon.state.call?.active);
         // Events due an alert before the page was there to hear of them (Isle starting just before one).
         for (const event of daemon.state.eventsSoon ?? []) {
             if (!setting('hidden-pages')?.includes('calendar'))

@@ -3,13 +3,14 @@
 
 // The closed island (gnome-extension/src/compact.js), hanging from the top of the screen: the time in the
 // middle and what is going on either side of it: a song's cover and bars, or the focus timer's ring and
-// time left. With both, the song keeps its sides and the timer is a small ring beside the bars.
+// time left. With both, the song keeps its sides and the timer is a small ring beside the bars. A call comes
+// first: a green phone on the left, the next activity's sign on the right, or a red microphone while muted.
 
 import {daemon} from './daemon.js';
-import {Art, Bars, Ring, clockParts, el, formatTime, showsClosed, watchClock} from './widgets.js';
+import {Art, Bars, Ring, clockParts, el, formatTime, icon, showsClosed, watchClock} from './widgets.js';
 
 /** CSS pixels, as SIZES.hanging in compact.js: the island with only the clock, and its signs. */
-const SIZE = {clock: 164, art: 24, artRadius: 6, ring: 20, bars: 16};
+const SIZE = {clock: 164, art: 24, artRadius: 6, ring: 20, bars: 16, call: 15};
 const PILL_HEIGHT = 30;
 const CORNER_RADIUS = 16;
 /** How far in from the island's end text on the right sits. */
@@ -32,6 +33,9 @@ export class CompactView {
         this._secondRing = new Ring({size: SIZE.ring, lineWidth: 3});
         this._bars = new Bars({height: SIZE.bars});
         this._timerTime = el('span', 'isle-compact-second-time');
+        this._secondArt = new Art({size: SIZE.art, radius: SIZE.artRadius});
+        this._phone = icon('isle-phone-symbolic', SIZE.call, 'isle-call-icon');
+        this._micOff = icon('isle-mic-off-symbolic', SIZE.call, 'isle-call-muted');
 
         this._left = el('div', 'isle-compact-slot isle-compact-start');
         this._right = el('div', 'isle-compact-slot isle-compact-end');
@@ -46,7 +50,7 @@ export class CompactView {
         this._ticker = 0;
         watchClock(() => this._tickClock());
         daemon.connect(key => {
-            if (key === 'nowPlaying' || key === 'pomodoro')
+            if (key === 'nowPlaying' || key === 'pomodoro' || key === 'call')
                 this.refresh();
             // The clock's format, the island's height, a page left out: laid out anew.
             if (key === 'settings') {
@@ -84,10 +88,10 @@ export class CompactView {
         if (np.art_key === this._artKey)
             return;
         this._artKey = np.art_key;
-        this._art.url = null;
+        this._art.url = this._secondArt.url = null;
         const url = await daemon.art();
         if (this._artKey === np.art_key) {
-            this._art.url = url;
+            this._art.url = this._secondArt.url = url;
             this.artUrl = url;
             this.onArt?.(url);
         }
@@ -99,10 +103,24 @@ export class CompactView {
         // The Music page left out in Settings takes the song out of the closed island too.
         const music = showsClosed(np) && !daemon.state.settings?.['hidden-pages']?.includes('music');
         const timing = timer && timer.phase !== 'idle' && (timer.running || timer.started_at_ms);
+        const call = daemon.state.call;
+        const onCall = call?.active && daemon.state.settings?.['call-activity'] !== false;
         let left = null, right = null;
         this._timing = timing;
 
-        if (music) {
+        if (onCall) {
+            // The call takes the left; the next activity's sign the right, a muted microphone over it.
+            this._bars.playing = false;
+            if (music) {
+                this._syncArt(np);
+                right = this._secondArt.node;
+            } else if (timing) {
+                right = this._secondRing.node;
+            }
+            left = this._phone;
+            if (call.muted)
+                right = this._micOff;
+        } else if (music) {
             this._syncArt(np);
             left = this._art.node;
             this._bars.playing = np.status === 'Playing';

@@ -16,6 +16,7 @@ export const PAGE_HEIGHT = 150;
 export const BOTTOM_PADDING = 20;
 
 const TABS = {
+    call: {icon: 'isle-phone', label: 'Call'},
     music: {icon: 'isle-music', label: 'Music'},
     notifications: {icon: 'isle-bell', label: 'Notifications'},
     focus: {icon: 'isle-timer', label: 'Timer'},
@@ -57,6 +58,8 @@ export class ExpandedView {
         daemon.connect(key => {
             if (key === 'nowPlaying' || key === 'pomodoro' || key === 'settings')
                 this._updateStatus();
+            if (key === 'call')
+                this._syncHidden();
             if (key === 'settings') {
                 this._syncHidden();
                 this._tickClock();
@@ -202,11 +205,13 @@ export class ExpandedView {
         const hidden = settings['hidden-pages'] ?? [];
         for (const page of this._pages)
             // The Apps and Usage pages have their own switches (app-usage, usage-enabled), as in Isle.
-            page.hidden = page.name === 'usage' ? settings['usage-enabled'] === false
+            // The Call page only has a tab during a call.
+            page.hidden = page.name === 'call' ? !daemon.state.call?.active || settings['call-activity'] === false
+                : page.name === 'usage' ? settings['usage-enabled'] === false
                 : page.name === 'apps' ? !settings['app-usage'] : hidden.includes(page.name);
         // At least one page stays.
         if (this._pages.every(page => page.hidden))
-            this._pages[0].hidden = false;
+            this._pages.find(page => page.name !== 'call').hidden = false;
         this._tabs.forEach(({tab}, index) => (tab.style.display = this._pages[index].hidden ? 'none' : ''));
         if (this.page.hidden) {
             this._index = this._pages.findIndex(page => !page.hidden);

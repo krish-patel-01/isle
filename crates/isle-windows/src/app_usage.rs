@@ -122,7 +122,7 @@ pub fn watch(usage: &Usage, enabled: impl Fn() -> bool) {
 }
 
 #[cfg(windows)]
-mod imp {
+pub(crate) mod imp {
     use std::ffi::c_void;
     use std::time::Duration;
 
@@ -167,14 +167,14 @@ mod imp {
         asked.is_ok() && state & ES_DISPLAY_REQUIRED != 0
     }
 
-    fn class_of(hwnd: HWND) -> String {
+    pub fn class_of(hwnd: HWND) -> String {
         let mut class = [0u16; 64];
         // SAFETY: fills a buffer of the size given.
         let len = unsafe { GetClassNameW(hwnd, &mut class) } as usize;
         String::from_utf16_lossy(&class[..len])
     }
 
-    fn pid_of(hwnd: HWND) -> u32 {
+    pub fn pid_of(hwnd: HWND) -> u32 {
         let mut pid = 0;
         // SAFETY: a plain query of a window the system handed us.
         unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
@@ -182,7 +182,7 @@ mod imp {
     }
 
     /// The program a process runs, as a full path.
-    fn path_of(pid: u32) -> Option<String> {
+    pub fn path_of(pid: u32) -> Option<String> {
         // SAFETY: opens a process for the least access there is, reads its image name, closes it.
         unsafe {
             let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
@@ -196,7 +196,7 @@ mod imp {
     }
 
     /// A program's name as it calls itself (its file description), else its file name.
-    fn name_of(path: &str) -> String {
+    pub fn name_of(path: &str) -> String {
         let stem = std::path::Path::new(path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         let wide = HSTRING::from(path);
         // SAFETY: reads a file's version resource into a buffer of the size it reported, then a string from it.
@@ -317,7 +317,7 @@ mod imp {
 }
 
 #[cfg(not(windows))]
-mod imp {
+pub(crate) mod imp {
     use std::time::Duration;
 
     pub fn idle() -> Duration {

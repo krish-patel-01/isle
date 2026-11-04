@@ -803,3 +803,95 @@ button {
 #isleIsland.isle-glass-dark .isle-segmented { background-color: rgba(255, 255, 255, 0.07); }
 #isleIsland.isle-glass-dark .isle-segment:hover { background-color: rgba(255, 255, 255, 0.06); }
 #isleIsland.isle-glass-dark .isle-segment.checked { background: rgba(255, 255, 255, 0.16); box-shadow: none; }
+
+/* ── Call (pages/call.js) ─────────────────────────────── */
+
+.isle-call-icon { color: #30d158; }
+.isle-call-muted { color: #ff453a; }
+.isle-tab-call .isle-icon { color: #30d158; }
+
+.isle-call { flex-direction: row; align-items: center; gap: 22px; }
+.isle-call button { font: inherit; color: inherit; border: none; cursor: default; }
+
+/* The call's window: Windows draws it over this box once the page holds still (calls.rs). */
+.isle-call-preview {
+  position: relative;
+  flex: none;
+  height: 128px;
+  width: 196px;
+  padding: 0;
+  border-radius: 14px;
+  background-color: #1c1c1e;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  transition: width 200ms ease-out;
+}
+.isle-call-preview:disabled { opacity: 0.6; }
+.isle-call-placeholder {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+}
+.isle-call-preview.live .isle-call-placeholder { visibility: hidden; }
+.isle-call-placeholder-icon .isle-icon { color: rgba(255, 255, 255, 0.8); }
+.isle-call-hint { font-size: 11px; font-weight: 500; color: rgba(255, 255, 255, 0.5); }
+.isle-call-hint:empty { display: none; }
+.isle-call-app-icon { display: block; object-fit: contain; }
+
+/* Over the preview under the pointer: where a click goes. */
+.isle-call-preview-hover {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: flex; padding: 9px; border-radius: 999px;
+  color: #ffffff; background-color: rgba(0, 0, 0, 0.55);
+  opacity: 0; transition: opacity 150ms;
+}
+.isle-call-preview:not(:disabled):hover .isle-call-preview-hover { opacity: 1; }
+
+.isle-call-side { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.isle-call-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.isle-call-head-icon { display: flex; flex: none; }
+.isle-call-name {
+  font-size: 17px; font-weight: 600; letter-spacing: -0.2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.isle-call-status { display: flex; gap: 5px; padding-left: 1px; }
+.isle-call-kind { font-size: 13px; color: rgba(255, 255, 255, 0.55); }
+.isle-call-duration { font-size: 13px; font-weight: 600; color: #30d158; font-feature-settings: "tnum"; }
+
+/* Round buttons with captions; mute turns white while on. */
+.isle-call-controls { display: flex; gap: 18px; padding-top: 14px; }
+.isle-call-control-box { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.isle-call-control {
+  width: 40px; height: 40px; border-radius: 20px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #ffffff; background-color: #2c2c2e;
+  transition: background-color 120ms;
+}
+.isle-call-control:hover { background-color: #3a3a3c; }
+.isle-call-control.checked { color: #000000; background-color: #ffffff; }
+.isle-call-control.checked:hover { background-color: #e6e6e6; }
+.isle-call-control:disabled { opacity: 0.35; }
+.isle-call-control-label { font-size: 11px; font-weight: 500; color: rgba(255, 255, 255, 0.6); }
+
+#isleIsland.isle-translucent .isle-call-preview { background-color: rgba(0, 0, 0, 0.3); }
+#isleIsland.isle-translucent .isle-call-hint { color: rgba(255, 255, 255, 0.67); }
+#isleIsland.isle-translucent .isle-call-kind { color: rgba(255, 255, 255, 0.7); }
+#isleIsland.isle-translucent .isle-call-control-label { color: rgba(255, 255, 255, 0.73); }
+#isleIsland.isle-translucent .isle-call-icon,
+#isleIsland.isle-translucent .isle-call-duration,
+#isleIsland.isle-translucent .isle-tab-call .isle-icon { color: #64dc82; }
+#isleIsland.isle-translucent .isle-call-muted { color: #ff968d; }
+#isleIsland.isle-translucent .isle-call-control {
+  background-color: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+#isleIsland.isle-translucent .isle-call-control:hover { background-color: rgba(255, 255, 255, 0.2); }
+#isleIsland.isle-translucent .isle-call-control:active { background-color: rgba(255, 255, 255, 0.26); }
+#isleIsland.isle-glass-mid .isle-call-control { background-color: rgba(255, 255, 255, 0.115); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04); }
+#isleIsland.isle-glass-mid .isle-call-control:hover { background-color: rgba(255, 255, 255, 0.17); }
+#isleIsland.isle-translucent .isle-call-control.checked {
+  color: #ffffff; background-color: #3584e4; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+#isleIsland.isle-translucent .isle-call-control.checked:hover { background-color: #4a90e8; }
+#isleIsland.isle-glass-dark .isle-call-control { background-color: rgba(255, 255, 255, 0.1); box-shadow: none; }
+#isleIsland.isle-glass-dark .isle-call-control:hover { background-color: rgba(255, 255, 255, 0.15); }
+#isleIsland.isle-glass-dark .isle-call-control:active { background-color: rgba(255, 255, 255, 0.2); }
