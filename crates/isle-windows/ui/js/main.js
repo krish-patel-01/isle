@@ -15,6 +15,7 @@ import {CalendarPage} from './pages/calendar.js';
 import {MusicPage} from './pages/music.js';
 import {NotificationsPage} from './pages/notifications.js';
 import {RemindersPage} from './pages/reminders.js';
+import {ShelfPage} from './pages/shelf.js';
 import {TimerPage} from './pages/timer.js';
 import {UsagePage} from './pages/usage.js';
 import * as Theme from './theme.js';
@@ -64,6 +65,8 @@ class Controller {
         }, 'eventSoon');
         const notifications = new NotificationsPage();
         notifications.onClose = () => this.collapse();
+        const shelf = new ShelfPage();
+        shelf.onClose = () => this.collapse();
         const call = new CallPage();
         call.onClose = () => this.collapse();
         // A new call is what the island opens on next, whatever was picked before.
@@ -72,7 +75,7 @@ class Controller {
                 queueMicrotask(() => this._expanded.showPageNamed('call'));
             this._onCall = Boolean(state?.active);
         }, 'call');
-        this._pages = [call, new MusicPage(), notifications, new TimerPage(), new RemindersPage(), calendar, new AppsPage(),
+        this._pages = [call, new MusicPage(), notifications, new TimerPage(), new RemindersPage(), shelf, calendar, new AppsPage(),
             new UsagePage()];
         this._expanded = new ExpandedView(this._pages, reshape);
         this._peek = new PeekView();

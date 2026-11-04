@@ -14,7 +14,7 @@ class Daemon {
     constructor() {
         this.state = {nowPlaying: null, lyrics: null, pomodoro: null, pomodoroConfig: null, todo: [], usage: null,
             settings: null, fullscreen: false, windowAtTop: false, events: [], systemEvents: null,
-            notifications: null, eventsSoon: [], call: null};
+            notifications: null, eventsSoon: [], call: null, clipboard: []};
         this._handlers = new Map();
     }
 

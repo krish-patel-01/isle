@@ -12,6 +12,7 @@ mod agents;
 mod app_usage;
 mod calendar;
 mod calls;
+mod clipboard;
 #[path = "../../isle-daemon/src/http.rs"]
 mod http;
 mod media;
@@ -68,6 +69,7 @@ struct App {
     events_soon: Mutex<Vec<Value>>,
     app_usage: Arc<app_usage::Usage>,
     calls: Arc<calls::Calls>,
+    clipboard: Arc<clipboard::Clipboard>,
 }
 
 /// Every interface's state at once, as the extension reads them when `isled` appears.
@@ -87,6 +89,7 @@ fn snapshot(app: tauri::State<'_, Arc<App>>) -> Value {
         "notifications": app.notifications.state(),
         "eventsSoon": app.events_soon.lock().unwrap().clone(),
         "call": app.calls.state(),
+        "clipboard": app.clipboard.items(),
         "fullscreen": screen::fullscreen_now(),
     })
 }
@@ -247,6 +250,11 @@ fn call(handle: AppHandle, app: tauri::State<'_, Arc<App>>, interface: String, m
                 let _ = handle.emit("notifications", app.notifications.state());
             }
         }
+        "Clipboard1" => {
+            if app.clipboard.call(&method, &arg) {
+                let _ = handle.emit("clipboard", app.clipboard.items());
+            }
+        }
         // The Usage page opened: fresher numbers, at most every two minutes.
         "Usage1" if method == "Refresh" => app.usage_refresh.ask(),
         // The user's answer to a permission: "allow", "always" or "deny".
@@ -256,6 +264,53 @@ fn call(handle: AppHandle, app: tauri::State<'_, Arc<App>>, interface: String, m
         }
         other => warn!("no {method} in {other}"),
     }
+}
+
+/// The clipboard items whose whole text holds `query` (Clipboard1's Search).
+#[tauri::command]
+async fn clipboard_search(app: tauri::State<'_, Arc<App>>, query: String) -> Result<Vec<u64>, ()> {
+    Ok(app.clipboard.search(&query))
+}
+
+/// Puts a clipboard item back on the clipboard; with `paste`, moves it to the top and, once the island has let
+/// go of the keyboard, pastes it into the window in front.
+#[tauri::command]
+async fn clipboard_copy(
+    handle: AppHandle,
+    window: tauri::WebviewWindow,
+    app: tauri::State<'_, Arc<App>>,
+    id: u64,
+    paste: bool,
+) -> Result<bool, ()> {
+    let copied = match app.clipboard.content(id) {
+        Some(clipboard::Content::Text(text)) => clipboard::imp::set_text(&text),
+        Some(clipboard::Content::Files(paths)) => clipboard::imp::set_files(&paths),
+        Some(clipboard::Content::Image(path)) => std::fs::read(path).is_ok_and(|png| clipboard::imp::set_image(&png)),
+        None => false,
+    };
+    if copied && paste {
+        if app.clipboard.call("Touch", &json!({"id": id})) {
+            let _ = handle.emit("clipboard", app.clipboard.items());
+        }
+        let island = window.hwnd().map_or(0, |hwnd| hwnd.0 as isize);
+        thread::spawn(move || {
+            // Time for the window behind to get the keyboard back; if the island still has it, it gives it back.
+            thread::sleep(Duration::from_millis(150));
+            if clipboard::imp::foreground() == island {
+                #[cfg(windows)]
+                focus_behind();
+                thread::sleep(Duration::from_millis(120));
+            }
+            clipboard::imp::press_paste(island);
+        });
+    }
+    Ok(copied)
+}
+
+/// A program's or a file's icon as a `data:` URL, or "".
+#[tauri::command]
+async fn file_icon(path: String) -> Result<String, ()> {
+    Ok(clipboard::imp::icon(&path))
 }
 
 /// The current track's cover as a `data:` URL, or null.
@@ -277,6 +332,8 @@ fn set_interactive(window: tauri::WebviewWindow, interactive: bool) {
 #[tauri::command]
 fn set_keyboard(window: tauri::WebviewWindow, wanted: bool) {
     if wanted {
+        #[cfg(windows)]
+        remember_front(&window);
         let _ = window.set_focus();
     } else {
         #[cfg(windows)]
@@ -284,19 +341,44 @@ fn set_keyboard(window: tauri::WebviewWindow, wanted: bool) {
     }
 }
 
+/// The window that was in front when the island took the keyboard, to hand it back to.
+#[cfg(windows)]
+static FRONT: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+#[cfg(windows)]
+fn remember_front(window: &tauri::WebviewWindow) {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    // SAFETY: a plain query.
+    let front = unsafe { GetForegroundWindow() }.0 as isize;
+    let island = window.hwnd().map_or(0, |hwnd| hwnd.0 as isize);
+    if front != 0 && front != island {
+        FRONT.store(front, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Gives the keyboard back: to the window that had it before the island, else the first ordinary window below.
 #[cfg(windows)]
 fn focus_behind() {
+    use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
-        GW_HWNDNEXT, GetForegroundWindow, GetWindow, IsWindowVisible, SetForegroundWindow,
+        GW_HWNDNEXT, GWL_EXSTYLE, GetForegroundWindow, GetWindow, GetWindowLongW, IsWindow, IsWindowVisible,
+        SetForegroundWindow, WS_EX_TOPMOST,
     };
     // SAFETY: plain Win32 calls on window handles the system gave us.
     unsafe {
+        let front = HWND(FRONT.swap(0, std::sync::atomic::Ordering::Relaxed) as *mut _);
+        if !front.is_invalid() && IsWindow(Some(front)).as_bool() && IsWindowVisible(front).as_bool() {
+            let _ = SetForegroundWindow(front);
+            return;
+        }
+        // Topmost windows (the taskbar) are passed over.
         let mut next = GetWindow(GetForegroundWindow(), GW_HWNDNEXT);
         while let Ok(hwnd) = next {
             if hwnd.is_invalid() {
                 break;
             }
-            if IsWindowVisible(hwnd).as_bool() {
+            let topmost = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 != 0;
+            if IsWindowVisible(hwnd).as_bool() && !topmost {
                 let _ = SetForegroundWindow(hwnd);
                 break;
             }
@@ -554,6 +636,7 @@ fn main() {
         events_soon: Mutex::default(),
         app_usage: Arc::new(app_usage::Usage::load()),
         calls: Arc::default(),
+        clipboard: Arc::new(clipboard::Clipboard::load()),
     });
 
     tauri::Builder::default()
@@ -576,8 +659,23 @@ fn main() {
             call_mute,
             call_raise,
             call_preview,
+            clipboard_search,
+            clipboard_copy,
+            file_icon,
             join_meeting
         ])
+        // The clipboard cards' thumbnails.
+        .register_uri_scheme_protocol(clipboard::SCHEME, |_ctx, request| {
+            let name = request.uri().path().trim_start_matches('/').to_owned();
+            match clipboard::thumb_file(&name) {
+                Some(bytes) => tauri::http::Response::builder()
+                    .header("Content-Type", "image/png")
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(bytes),
+                None => tauri::http::Response::builder().status(404).body(Vec::new()),
+            }
+            .unwrap_or_default()
+        })
         .setup(move |tauri_app| {
             let window = WebviewWindowBuilder::new(tauri_app, "island", WebviewUrl::App("index.html".into()))
                 .title("Isle")
@@ -658,6 +756,35 @@ fn main() {
                         let _ = call_handle.emit("call", state);
                     },
                 );
+            });
+            let (clip_handle, clip_app) = (handle.clone(), app.clone());
+            thread::spawn(move || {
+                clipboard::imp::listen(move || {
+                    if clipboard::imp::own_copy() {
+                        return;
+                    }
+                    let (enabled, ignored) = {
+                        let settings = clip_app.settings.lock().unwrap();
+                        let hidden = settings.get("hidden-pages");
+                        let shown = !hidden.as_array().is_some_and(|pages| pages.iter().any(|page| page == "shelf"));
+                        let ignored: Vec<String> = settings
+                            .get("clipboard-ignored-apps")
+                            .as_array()
+                            .map(|names| names.iter().filter_map(|name| name.as_str().map(str::to_lowercase)).collect())
+                            .unwrap_or_default();
+                        (settings.bool("clipboard-history") && shown, ignored)
+                    };
+                    if !enabled {
+                        return;
+                    }
+                    let app_id = clipboard::imp::front_app().map(|(path, _)| path).unwrap_or_default();
+                    if clipboard::is_ignored(&app_id, &ignored) {
+                        return;
+                    }
+                    if clip_app.clipboard.add(clipboard::imp::read(), &app_id) {
+                        let _ = clip_handle.emit("clipboard", clip_app.clipboard.items());
+                    }
+                });
             });
             let usage_app2 = app.clone();
             thread::spawn(move || {
