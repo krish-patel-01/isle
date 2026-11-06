@@ -7,8 +7,11 @@
 //! state the daemon's interfaces would (Media1, Pomodoro1, Todo1), with the same JSON.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Settings' defaults are one long json! list.
+#![recursion_limit = "256"]
 
 mod agents;
+mod assistant;
 mod app_usage;
 mod calendar;
 mod calls;
@@ -17,17 +20,21 @@ mod dropzone;
 #[path = "../../isle-daemon/src/http.rs"]
 mod http;
 mod media;
+#[cfg(old_msvc)]
+mod msvc_stl;
 mod notifications;
 mod screen;
 mod settings;
 mod share;
 mod shelf;
 mod store;
+mod system;
 mod tasks;
 mod thumbs;
 mod timer;
 mod uri;
 mod usage;
+mod voice;
 
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -80,6 +87,56 @@ struct App {
     clipboard: Arc<clipboard::Clipboard>,
     shelf: Arc<shelf::ShelfStore>,
     share: Arc<share::Share>,
+    voice: Arc<voice::Voice>,
+    assistant: Arc<assistant::Assistant>,
+}
+
+/// The island's window, for what must leave it out (the assistant's window list).
+static ISLAND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+fn island_hwnd() -> Option<isize> {
+    Some(ISLAND.load(std::sync::atomic::Ordering::Relaxed)).filter(|&hwnd| hwnd != 0)
+}
+
+/// Listens for a request (the island's microphone; Win+Alt+I does the same).
+#[tauri::command]
+fn assistant_listen(app: tauri::State<'_, Arc<App>>) {
+    app.assistant.listen();
+}
+
+/// A typed request.
+#[tauri::command]
+fn assistant_ask(app: tauri::State<'_, Arc<App>>, text: String) {
+    app.assistant.ask(text);
+}
+
+#[tauri::command]
+fn assistant_stop(app: tauri::State<'_, Arc<App>>) {
+    app.assistant.stop();
+}
+
+/// Run (true) or Deny for the command the assistant asked to run.
+#[tauri::command]
+fn assistant_answer(app: tauri::State<'_, Arc<App>>, id: u64, run: bool) {
+    app.assistant.answer(id, run);
+}
+
+#[tauri::command]
+fn assistant_new_chat(app: tauri::State<'_, Arc<App>>) {
+    app.assistant.new_chat();
+}
+
+/// Whether Claude Code is installed and signed in, for Settings.
+#[tauri::command]
+fn assistant_status() -> Value {
+    assistant::Assistant::status()
+}
+
+/// Downloads the speech model for dictation and the assistant, telling Settings as it goes.
+#[tauri::command]
+fn speech_download(app: tauri::State<'_, Arc<App>>) {
+    let voice = app.voice.clone();
+    thread::spawn(move || voice.speech.download(|_| voice.model_changed()));
 }
 
 /// Every interface's state at once, as the extension reads them when `isled` appears.
@@ -103,6 +160,10 @@ fn snapshot(app: tauri::State<'_, Arc<App>>) -> Value {
         "shelf": app.shelf.items(),
         "share": app.share.state(),
         "fullscreen": screen::fullscreen_now(),
+        "voice": app.voice.state(),
+        "assistant": app.assistant.state(),
+        "assistantChat": app.assistant.chat(),
+        "speechModel": serde_json::to_value(app.voice.speech.model()).unwrap_or(Value::Null),
     })
 }
 
@@ -131,6 +192,12 @@ fn settings_changed(handle: &AppHandle, app: &App, key: &str) {
     if key.is_empty() || key == "island-monitor" {
         screen::wake();
     }
+}
+
+/// How long since the last key press or pointer movement, in ms: an alert stays until the user has been seen.
+#[tauri::command]
+fn idle_ms() -> u64 {
+    app_usage::imp::idle().as_millis() as u64
 }
 
 /// App usage today, over seven days and over 30, for the Apps page (AppUsage1's GetStats).
@@ -218,7 +285,12 @@ fn set_shown(window: tauri::WebviewWindow, shown: bool) {
 /// One daemon method: `interface` as on D-Bus (`Media1`, `Pomodoro1`, `Todo1`), its argument as JSON.
 #[tauri::command]
 fn call(handle: AppHandle, app: tauri::State<'_, Arc<App>>, interface: String, method: String, arg: Value) {
-    match interface.as_str() {
+    dispatch(&handle, &app, &interface, method, arg);
+}
+
+/// One of Isle's methods, from the island or the assistant.
+fn dispatch(handle: &AppHandle, app: &App, interface: &str, method: String, arg: Value) {
+    match interface {
         "Media1" => {
             let position = arg.as_i64().unwrap_or(0);
             let _ = app
@@ -275,7 +347,7 @@ fn call(handle: AppHandle, app: tauri::State<'_, Arc<App>>, interface: String, m
                 _ => false,
             };
             if changed {
-                shelf_changed(&handle, &app);
+                shelf_changed(handle, app);
             }
         }
         "Share1" => {
@@ -798,6 +870,40 @@ fn main() {
     log::info!("Isle {} starting", env!("CARGO_PKG_VERSION"));
     let (wish_tx, wish_rx) = mpsc::channel();
     let shelf = Arc::new(shelf::ShelfStore::load());
+    let emit: voice::Emit = Arc::new(|key: &str, value: Value| {
+        if let Some(handle) = HANDLE.get() {
+            let _ = handle.emit(key, value);
+        }
+    });
+    let voice = Arc::new(voice::Voice::new(emit.clone()));
+    let settings_for_assistant: Arc<Mutex<Option<Arc<App>>>> = Arc::default();
+    let assistant = {
+        let (config_app, state_app) = (settings_for_assistant.clone(), settings_for_assistant.clone());
+        assistant::Assistant::new(
+            voice.clone(),
+            emit,
+            Arc::new(|interface: &str, method: &str, arg: Value| {
+                if let Some(handle) = HANDLE.get() {
+                    let app = handle.state::<Arc<App>>();
+                    dispatch(handle, &app, interface, method.to_owned(), arg);
+                }
+            }),
+            Arc::new(move || match state_app.lock().unwrap().as_ref() {
+                Some(app) => json!({"todo": app.tasks.lock().unwrap().items(), "events": app.calendar.lock().unwrap().events()}),
+                None => Value::Null,
+            }),
+            move || match config_app.lock().unwrap().as_ref() {
+                Some(app) => {
+                    let settings = app.settings.lock().unwrap();
+                    assistant::Config {
+                        on: settings.bool("assistant"),
+                        model: settings.get("assistant-model").as_str().unwrap_or_default().to_owned(),
+                    }
+                }
+                None => assistant::Config { on: false, model: String::new() },
+            },
+        )
+    };
     let app = Arc::new(App {
         timer: Timer::load(),
         tasks: Tasks::load(),
@@ -817,6 +923,8 @@ fn main() {
         calls: Arc::default(),
         clipboard: Arc::new(clipboard::Clipboard::load()),
         shelf: shelf.clone(),
+        voice,
+        assistant: assistant.clone(),
         share: share::Share::new(
             shelf,
             Arc::new(|key: &str, value: Value| {
@@ -826,6 +934,9 @@ fn main() {
             }),
         ),
     });
+
+    *settings_for_assistant.lock().unwrap() = Some(app.clone());
+    thread::spawn(move || assistant::hotkey(assistant));
 
     tauri::Builder::default()
         // One Isle at a time; starting it again (from the Start menu, say) opens its Settings.
@@ -844,6 +955,7 @@ fn main() {
             open_link,
             calendar_parse,
             app_usage_stats,
+            idle_ms,
             call_mute,
             call_raise,
             call_preview,
@@ -861,6 +973,13 @@ fn main() {
             clipboard_to_shelf,
             share_start,
             share_code,
+            speech_download,
+            assistant_listen,
+            assistant_ask,
+            assistant_stop,
+            assistant_answer,
+            assistant_new_chat,
+            assistant_status,
             join_meeting
         ])
         // The clipboard cards' thumbnails.
@@ -919,6 +1038,7 @@ fn main() {
             // Files dragged onto the island land on Isle's own drop zone (dropzone.rs), made here on the main thread.
             let drop_window = window.clone();
             let island = window.hwnd().map_or(0, |hwnd| hwnd.0 as isize);
+            ISLAND.store(island, std::sync::atomic::Ordering::Relaxed);
             dropzone::imp::create(island, Box::new(move |kind, paths, point| {
                 if kind != "over" {
                     log::info!(target: "isle::dropzone", "file drag: {kind} {paths:?}");
@@ -995,6 +1115,37 @@ fn main() {
                         let _ = clip_handle.emit("clipboard", clip_app.clipboard.items());
                     }
                 });
+            });
+            let dictation_app = app.clone();
+            thread::spawn(move || {
+                let voice = dictation_app.voice.clone();
+                let config = || {
+                    let settings = dictation_app.settings.lock().unwrap();
+                    voice::dictation::Config {
+                        on: settings.bool("dictation"),
+                        key: settings.get("dictation-key").as_str().unwrap_or("right-ctrl").to_owned(),
+                        hands_free: settings.bool("dictation-hands-free"),
+                        insert: settings.get("dictation-insert").as_str().unwrap_or("paste").to_owned(),
+                        fillers: settings.bool("dictation-fillers"),
+                    }
+                };
+                // Loaded ahead, so the first dictation is as quick as the rest.
+                if config().on && voice.speech.ready() {
+                    let preload = voice.clone();
+                    thread::spawn(move || {
+                        if let Err(err) = preload.speech.engine() {
+                            log::warn!(target: "isle::voice", "{err:#}");
+                        }
+                    });
+                }
+                voice::dictation::run(voice, config);
+            });
+            let system_handle = handle.clone();
+            thread::spawn(move || {
+                system::watch(|event| {
+                    log::info!(target: "isle::system", "{event:?}");
+                    let _ = system_handle.emit("systemAlert", event);
+                })
             });
             let usage_app2 = app.clone();
             thread::spawn(move || {

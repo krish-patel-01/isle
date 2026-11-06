@@ -30,6 +30,9 @@ image = { workspace = true, features = ["bmp", "jpeg", "gif", "webp"] }
 httparse.workspace = true
 md5.workspace = true
 qrcode.workspace = true
+regex = "1"
+# Speech to text on this computer (dictation, the assistant), linked in whole.
+sherpa-onnx = "2.0.1"
 subtle.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
 drag = "2.1"
@@ -48,9 +51,16 @@ tokio = { workspace = true, features = ["test-util"] }
 [target.'cfg(windows)'.dependencies]
 # For the island's drop zone, a COM drop target of Isle's own (`#[implement]` names this crate).
 windows-core = "0.61"
+# The lists WinRT takes and gives (paired Bluetooth devices).
+windows-collections = "0.2"
 windows = { version = "0.61", features = [
     "Foundation",
     "Foundation_Collections",
+    "Devices_Enumeration",
+    "Devices_Bluetooth",
+    "Devices_Radios",
+    "Win32_System_Shutdown",
+    "Networking_Connectivity",
     "Media_Control",
     "Storage_Streams",
     "Win32_Foundation",

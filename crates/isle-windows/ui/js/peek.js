@@ -32,6 +32,9 @@ const TONES = {
     calendar: [10, 132, 255],
 };
 
+/** The colour (0..255) an alert is in. */
+export const toneOf = alert => TONES[alert?.tone ?? 'neutral'] ?? TONES.neutral;
+
 const AGENT_APPS = {claude: 'Claude Code', codex: 'Codex', grok: 'Grok'};
 const AGENT_NAMES = {claude: 'Claude', codex: 'Codex', grok: 'Grok'};
 const agentIcon = provider => provider === 'codex' ? 'isle-openai' : provider === 'grok' ? 'isle-grok' : 'isle-claude';
@@ -135,6 +138,92 @@ export function meetingAlert(event, join) {
         action: event.link ? {label: 'Join', callback: join, primary: true} : null,
         page: 'calendar',
     };
+}
+
+/** "86%". */
+const percentText = percent => `${Math.round(percent)}%`;
+/** A battery on its side; the ring around it shows the level. */
+const batteryIcon = percent => percent <= 20 ? 'isle-battery-low-symbolic' : 'isle-battery-symbolic';
+
+/** The Settings switch each system alert answers to. */
+export const SYSTEM_ALERTS = {power: 'power', battery_low: 'power', battery_full: 'power', network: 'network',
+    bluetooth: 'bluetooth'};
+
+/** Charging, the battery, the network dropping and Bluetooth devices (alerts.js `system`), or null. */
+export function systemAlert(event) {
+    switch (event.kind) {
+    case 'power':
+        return {
+            key: 'power',
+            icon: event.plugged ? 'isle-bolt' : batteryIcon(event.percent),
+            ring: event.percent / 100,
+            title: event.plugged ? 'Charging' : 'On battery',
+            subtitle: event.plugged ? 'Charger connected' : 'Charger disconnected',
+            value: percentText(event.percent),
+            tone: event.plugged ? 'good' : event.percent <= 20 ? 'bad' : 'neutral',
+            duration: STATUS_DURATION,
+        };
+    case 'battery_low':
+        return {
+            key: 'power',
+            icon: batteryIcon(event.percent),
+            ring: event.percent / 100,
+            title: 'Low battery',
+            subtitle: 'Plug in your charger soon',
+            value: percentText(event.percent),
+            tone: 'bad',
+            duration: REMINDER_DURATION,
+        };
+    case 'battery_full':
+        return {
+            key: 'power',
+            icon: 'isle-bolt',
+            ring: 1,
+            title: 'Fully charged',
+            subtitle: 'You can unplug your charger',
+            value: '100%',
+            tone: 'good',
+            duration: STATUS_DURATION,
+        };
+    case 'network':
+        // Back online (after it was lost; waking from sleep says nothing).
+        if (event.connected)
+            return {
+                key: 'network',
+                icon: 'isle-wifi-symbolic',
+                title: 'Online',
+                subtitle: event.name ? `Connected to ${event.name}` : 'The network connection is back',
+                tone: 'good',
+                duration: STATUS_DURATION,
+            };
+        return {
+            key: 'network',
+            icon: 'isle-wifi-off-symbolic',
+            title: 'Offline',
+            subtitle: 'The network connection was lost',
+            tone: 'bad',
+            duration: STATUS_DURATION,
+        };
+    case 'bluetooth': {
+        const {device} = event;
+        const battery = event.connected ? device.battery ?? null : null;
+        const alert = {
+            key: `bluetooth:${device.path}`,
+            icon: device.icon || 'isle-bluetooth-symbolic',
+            title: device.name,
+            subtitle: event.connected ? 'Connected' : 'Disconnected',
+            tone: !event.connected ? 'neutral' : battery !== null && battery < 20 ? 'bad' : 'good',
+            duration: STATUS_DURATION,
+        };
+        if (battery !== null) {
+            alert.ring = battery / 100;
+            alert.value = percentText(battery);
+        }
+        return alert;
+    }
+    default:
+        return null;
+    }
 }
 
 /** An app's notification (alerts.js `notification`): its icon, who over what (two lines), opening the app on a click. */

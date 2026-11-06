@@ -42,8 +42,14 @@ async function set(key, value) {
 }
 
 function syncAll() {
-    for (const sync of syncs)
-        sync();
+    // One row failing never leaves the rows after it unshown.
+    for (const sync of syncs) {
+        try {
+            sync();
+        } catch (err) {
+            console.error(err);
+        }
+    }
 }
 
 function toast(text) {
@@ -414,6 +420,16 @@ function islandPage() {
             switchRow('notification-alerts', 'Notifications', 'Apps’ notifications in the island too, as Windows shows them'),
             switchRow('alerts-over-fullscreen', 'Over full-screen apps',
                 'Alerts show over a video or game, then hide again; off, they wait until it leaves full screen'),
+            switchRow('alert-power', 'Charging and battery', 'Plugged in, unplugged, full and low'),
+            switchRow('alert-network', 'Network', 'When the connection drops, and when it comes back'),
+            switchRow('alert-bluetooth', 'Bluetooth', 'Devices connecting, with their battery'),
+            switchRow('edge-light', 'Edge light', 'A light runs round the island as an alert comes, and glows while you dictate or the assistant works'),
+            depends(choiceRow('edge-light-color', 'Edge light colour', 'Alerts in one hot red, or each in its own colour. Your voice is always green', [
+                ['red', 'Red'],
+                ['alert', 'Alert colours'],
+            ]), {enabled: () => setting('edge-light')}),
+            depends(switchRow('edge-light-motion', 'Always animate',
+                'Run the light even when Windows’ Animation effects is off'), {enabled: () => setting('edge-light')}),
             switchRow('event-alerts', 'Calendar events', 'Before each event with a time, with Join for a Meet, Zoom or Teams link'),
             depends(intRow('event-alert-minutes', 'Minutes before an event', null, 1, 60),
                 {enabled: () => setting('event-alerts')}),
@@ -443,7 +459,7 @@ function clipboardPage() {
             action: 'Clear',
         }, () => daemon.call('Clipboard1', 'Clear'));
     });
-    const history = group('Clipboard History', '', [keep, row('Clear history', 'Pinned items are kept', clear)]);
+    const history = group('Clipboard History', 'The Shelf page shows it. Everything stays on this computer.', [keep, row('Clear history', 'Pinned items are kept', clear)]);
     // The history lives on the Shelf page: with that page off, nothing is kept.
     syncs.push(() => {
         const off = (setting('hidden-pages') ?? []).includes('shelf');
@@ -585,6 +601,75 @@ function usagePage() {
 
 const WEBSITE = 'https://github.com/zickrian/isle';
 
+/** The speech model for dictation and the assistant: downloaded once, here. */
+function speechModelRow() {
+    const button = el('button', '', ['Download']);
+    const status = el('span', 'row-subtitle');
+    const node = row('Speech model', '', [status, button]);
+    const sync = () => {
+        const model = daemon.state.speechModel ?? {state: 'missing'};
+        button.hidden = !['missing', 'failed'].includes(model.state);
+        button.textContent = model.state === 'failed' ? 'Try again' : 'Download';
+        status.textContent = model.state === 'downloading' ? `${Math.round((model.progress ?? 0) * 100)}%`
+            : model.state === 'ready' ? 'Ready' : '';
+        node.setSubtitle(model.state === 'failed' ? `Couldn’t download: ${model.error}`
+            : 'Parakeet, English: speech is turned into text on this computer, never sent anywhere (108 MB)');
+    };
+    button.addEventListener('click', () => {
+        button.hidden = true;
+        invoke('speech_download');
+    });
+    syncs.push(sync);
+    daemon.connect(sync, 'speechModel');
+    return node;
+}
+
+/** The assistant: on or off, and which Claude answers. */
+function assistantGroup() {
+    const on = () => setting('assistant');
+    const claude = row('Claude Code', 'Looking…');
+    invoke('assistant_status').then(status => claude.setSubtitle(!status.installed
+        ? 'Not installed: get it from claude.com/code, then sign in by running claude once'
+        : status.signedIn ? 'Installed and signed in: the assistant answers with your own plan'
+            : 'Installed, not signed in: run claude in a terminal once to sign in')).catch(() => {});
+    return group('Assistant', 'Press Win+Alt+I (or the microphone on the Assistant page) and speak, or type there. ' +
+        'Claude answers, step by step: it can open and arrange apps, find files, change settings, look into problems ' +
+        'and install things. A command that changes the computer runs only when you press Run.', [
+        switchRow('assistant', 'Assistant', 'The Assistant page and Win+Alt+I'),
+        depends(claude, {enabled: on}),
+        depends(choiceRow('assistant-model', 'Model', 'Which Claude answers', [
+            ['', 'Claude Code’s default'],
+            ['sonnet', 'Sonnet'],
+            ['opus', 'Opus'],
+            ['haiku', 'Haiku (quickest)'],
+        ]), {enabled: on}),
+    ]);
+}
+
+function voicePage() {
+    const on = () => setting('dictation');
+    const keyName = {'right-ctrl': 'Right Ctrl', 'right-alt': 'Right Alt', 'ctrl-win': 'Ctrl + Windows'};
+    const handsFree = depends(switchRow('dictation-hands-free', 'Hands-free', ''), {enabled: on});
+    syncs.push(() => handsFree.setSubtitle(`${keyName[setting('dictation-key')] ?? 'Right Ctrl'} + Space starts ` +
+        'listening without holding; press it again to type'));
+    return page('voice', 'Voice', 'isle-mic-symbolic', [
+        group('Speech', null, [speechModelRow()]),
+        group('Dictation', 'Hold the key, speak, and let go: what you said is typed where your cursor is. The island ' +
+            'shows the microphone while it listens.', [
+            switchRow('dictation', 'Dictation', 'Type with your voice, in any app'),
+            depends(choiceRow('dictation-key', 'Key', 'Hold it to talk; used with another key, it is a shortcut as ' +
+                'before', Object.entries(keyName)), {enabled: on}),
+            handsFree,
+            depends(choiceRow('dictation-insert', 'Typing', 'How the words reach the app', [
+                ['paste', 'Paste'],
+                ['type', 'Key by key'],
+            ]), {enabled: on}),
+            depends(switchRow('dictation-fillers', 'Leave out fillers', 'Um, uh and hmm'), {enabled: on}),
+        ]),
+        assistantGroup(),
+    ]);
+}
+
 function aboutPage() {
     const version = el('span', '', ['Isle']);
     invoke('plugin:app|version').then(v => (version.textContent = `Isle ${v}`)).catch(() => {});
@@ -608,7 +693,7 @@ function aboutPage() {
 
 // The window
 
-const pages = [islandPage(), clipboardPage(), timerPage(), usagePage(), aboutPage()];
+const pages = [islandPage(), clipboardPage(), voicePage(), timerPage(), usagePage(), aboutPage()];
 const switcher = document.getElementById('switcher');
 const main = document.getElementById('pages');
 const buttons = pages.map(({name, title, iconName, node}) => {

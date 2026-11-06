@@ -14,7 +14,8 @@ class Daemon {
     constructor() {
         this.state = {nowPlaying: null, lyrics: null, pomodoro: null, pomodoroConfig: null, todo: [], usage: null,
             settings: null, fullscreen: false, windowAtTop: false, events: [], systemEvents: null,
-            notifications: null, eventsSoon: [], call: null, clipboard: [], shelf: [], share: null};
+            notifications: null, eventsSoon: [], call: null, clipboard: [], shelf: [], share: null, voice: null,
+            assistant: null, assistantChat: [], speechModel: null};
         this._handlers = new Map();
     }
 
@@ -66,7 +67,7 @@ class Daemon {
         // Signals: something happened, with no state kept (a phase ran out, an AI asks, is done, stops asking, a
         // plan's limit nears its end).
         for (const signal of ['phaseFinished', 'agentRequest', 'agentGone', 'agentEvent', 'usageAlert',
-            'notificationPosted', 'eventSoon', 'shareReceived']) {
+            'notificationPosted', 'eventSoon', 'shareReceived', 'systemAlert', 'voiceLevel', 'assistantReminder', 'assistantShow']) {
             await listen(signal, event => {
                 for (const fn of this._handlers.get(signal) ?? [])
                     fn(signal, event.payload);

@@ -8,8 +8,10 @@
 import {CompactView} from './compact.js';
 import {daemon} from './daemon.js';
 import {ExpandedView} from './expanded.js';
+import {Glow, PALETTES, RED, paletteAround} from './glow.js';
 import {Island} from './island.js';
 import {AppsPage} from './pages/apps.js';
+import {AssistantPage} from './pages/assistant.js';
 import {CallPage} from './pages/call.js';
 import {CalendarPage} from './pages/calendar.js';
 import {MusicPage} from './pages/music.js';
@@ -19,7 +21,9 @@ import {ShelfPage} from './pages/shelf.js';
 import {TimerPage} from './pages/timer.js';
 import {UsagePage} from './pages/usage.js';
 import * as Theme from './theme.js';
-import {PeekView, agentAsks, agentEvent, meetingAlert, notificationAlert, pomodoroFinished, trackAlert, usageAlert} from './peek.js';
+import {VoiceView} from './voice.js';
+import {PeekView, REMINDER_DURATION, SYSTEM_ALERTS, agentAsks, agentEvent, meetingAlert, notificationAlert, pomodoroFinished, systemAlert, toneOf, trackAlert,
+    usageAlert} from './peek.js';
 
 const {invoke} = window.__TAURI__.core;
 const {listen} = window.__TAURI__.event;
@@ -32,6 +36,10 @@ const PEEK_RADIUS = 28;
 const PEEK_SHOULDER = 13;
 /** An alert held under the pointer goes this long after the pointer leaves it. */
 const ALERT_LEAVE_MS = 1500;
+/** An alert shows at least this long; then it stays until a key or the pointer moves, and this long after. */
+const ALERT_MIN_MS = 5000, ALERT_SEEN_MS = 3000;
+/** Input this soon after an alert came doesn't count as seeing it (the user was already typing). */
+const ALERT_GRACE_MS = 1200;
 /** How far the pointer may move while it rests before the island opens (for Settings' hover-delay). */
 const REST_DISTANCE_PX = 10;
 /** Faded away by auto-hide, this much of the island's top brings it back (controller.js REVEAL_EDGE_PX). */
@@ -48,6 +56,7 @@ class Controller {
     constructor() {
         const root = document.getElementById('isleIsland');
         this._island = new Island(root);
+        this._glow = new Glow(root.querySelector('#glow'), this._island);
         // A view's width changing (a song starting, lyrics turned on) reshapes the island once, on the next frame.
         const reshape = () => {
             if (!this._reshape)
@@ -77,9 +86,16 @@ class Controller {
             this._onCall = Boolean(state?.active);
         }, 'call');
         this._pages = [call, new MusicPage(), notifications, new TimerPage(), new RemindersPage(), shelf, calendar, new AppsPage(),
-            new UsagePage()];
+            new UsagePage(), new AssistantPage()];
         this._expanded = new ExpandedView(this._pages, reshape);
         this._peek = new PeekView();
+        // Dictating (or the assistant listening): the microphone's wave in the closed island, over any alert.
+        this._voice = new VoiceView();
+        daemon.connect((_key, state) => this._onVoice(state), 'voice');
+        daemon.connect((_key, level) => {
+            this._voice.pushLevel(level);
+            this._glow.voice(level);
+        }, 'voiceLevel');
         this._peek.onOpen = alert => {
             this._dismissAlert(false);
             if (alert.page)
@@ -117,6 +133,23 @@ class Controller {
         daemon.connect((_key, event) => this._post(agentEvent(event)), 'agentEvent');
         daemon.connect((_key, [provider, window, percent, resetsAt]) =>
             this._post(usageAlert(provider, window, percent, resetsAt, setting('usage-critical') ?? 95)), 'usageAlert');
+        // Charging, the battery, going offline, Bluetooth: each as Settings says; only a low battery through Do Not Disturb.
+        daemon.connect((_key, event) => {
+            const alert = systemAlert(event);
+            if (!alert || setting(`alert-${SYSTEM_ALERTS[event.kind] ?? 'power'}`) === false)
+                return;
+            if (daemon.state.notifications?.dnd && event.kind !== 'battery_low')
+                return;
+            this._post(alert);
+        }, 'systemAlert');
+        // The assistant: its answer, what went wrong, and the command it asks to run (Run or Deny), in the closed island.
+        daemon.connect((_key, state) => this._onAssistant(state), 'assistant');
+        daemon.connect((_key, text) => this._post({key: 'assistant-reminder', icon: 'isle-bell', title: text, subtitle: 'Reminder',
+            tone: 'warn', duration: REMINDER_DURATION}), 'assistantReminder');
+        daemon.connect((_key, page) => {
+            this.expand();
+            this._expanded.showPageNamed(page);
+        }, 'assistantShow');
         daemon.connect(() => this._onNowPlaying(), 'nowPlaying');
         // An app's notification: in the island too, unless Settings or Do Not Disturb say not.
         daemon.connect((_key, note) => {
@@ -129,9 +162,10 @@ class Controller {
             this._syncFullscreen();
             this._syncAutoHide(true);
             this._syncTheme();
+            this._syncGlow();
         }, 'settings');
         const views = root.querySelector('#views');
-        for (const view of [this._compact.node, this._expanded.node, this._peek.node]) {
+        for (const view of [this._compact.node, this._expanded.node, this._peek.node, this._voice.node]) {
             view.style.visibility = 'hidden';
             views.append(view);
         }
@@ -312,6 +346,11 @@ class Controller {
     _post(alert) {
         if (this._presentation === 'expanded')
             return;
+        // Dictating: it waits till the words are typed.
+        if (this._presentation === 'voice') {
+            this._waiting = this._waiting.filter(each => each.key !== alert.key).concat(alert);
+            return;
+        }
         // Hidden by a full-screen app: it waits.
         if (this._hidden) {
             this._waiting = this._waiting.filter(each => each.key !== alert.key).concat(alert);
@@ -333,11 +372,17 @@ class Controller {
             }
         }
         this._peek.show(alert);
+        if (setting('edge-light') !== false)
+            this._glow.comet(this._redLight ? RED : toneOf(alert));
         this._presentation = 'peek';
         this._cancel('alert');
+        // A song change just passes; anything else stays until the user has been seen at the computer.
+        this._alertShown = performance.now();
+        this._alertNoticed = alert.key === 'track';
         if (!alert.actions) {
-            this._alertEnds = performance.now() + (alert.duration ?? 2600);
-            this._later('alert', alert.duration ?? 2600, () => this._alertTimeUp());
+            const duration = this._alertNoticed ? alert.duration ?? 2600 : Math.max(alert.duration ?? 0, ALERT_MIN_MS);
+            this._alertEnds = performance.now() + duration;
+            this._later('alert', duration, () => this._alertTimeUp());
         }
         this._present();
     }
@@ -354,11 +399,35 @@ class Controller {
     }
 
     /** Its time is up: it goes, unless the pointer holds it (then it goes a moment after it leaves). */
-    _alertTimeUp() {
+    async _alertTimeUp() {
         const {x, y} = this._pointer;
         if (this._island.contains(x, y))
             return;
+        const alert = this._peek.alert;
+        if (alert && !this._alertNoticed) {
+            const idle = await invoke('idle_ms').catch(() => 0);
+            if (this._peek.alert !== alert || this._timers.alert)
+                return;
+            // A key or the pointer moved since it came (a moment after, so typing already under way doesn't count).
+            if (idle < performance.now() - this._alertShown - ALERT_GRACE_MS)
+                this._noticed();
+            else
+                this._later('alert', 1000, () => this._alertTimeUp());
+            return;
+        }
         this._dismissAlert();
+    }
+
+    /** The user has seen the alert: it stays a few seconds more, and the edge stops calling. */
+    _noticed() {
+        if (this._alertNoticed)
+            return;
+        this._alertNoticed = true;
+        this._syncGlow();
+        if (!this._peek.alert?.actions) {
+            this._alertEnds = performance.now() + ALERT_SEEN_MS;
+            this._later('alert', ALERT_SEEN_MS, () => this._alertTimeUp());
+        }
     }
 
     _dismissAlert(present = true) {
@@ -372,17 +441,143 @@ class Controller {
         }
     }
 
+    /** The assistant answered, failed, or asks to run a command; the open island's Assistant page shows the same. */
+    _onAssistant(state) {
+        this._syncGlow();
+        if (!state)
+            return;
+        const cardId = state.card && !state.card.running ? `assistant-card:${state.card.id}` : null;
+        // A card answered or gone: its ask goes too.
+        for (const ask of this._asks.filter(each => each.id?.startsWith?.('assistant-card:') && each.id !== cardId)) {
+            this._asks = this._asks.filter(each => each !== ask);
+            if (this._peek.alert?.id === ask.id)
+                this._dismissAlert();
+        }
+        if (cardId && !this._asks.some(ask => ask.id === cardId) && this._lastCard !== cardId) {
+            this._lastCard = cardId;
+            if (this._presentation === 'expanded')
+                return;
+            const {card} = state;
+            const answer = run => {
+                invoke('assistant_answer', {id: card.id, run});
+                this._asks = this._asks.filter(ask => ask.id !== cardId);
+            };
+            this._asks.push({
+                key: cardId,
+                id: cardId,
+                icon: 'isle-terminal-symbolic',
+                title: card.why,
+                subtitle: card.detail || 'The assistant asks to run this',
+                code: card.command,
+                tone: 'warn',
+                actions: [
+                    {label: 'Deny', answer: 'deny', callback: () => answer(false)},
+                    {label: card.root ? 'Run as admin' : 'Run', answer: 'allow', done: 'Running', primary: true, callback: () => answer(true)},
+                ],
+                sticky: true,
+                duration: 600000,
+            });
+            if (this._peek.alert?.actions === undefined)
+                this._showNext();
+            return;
+        }
+        if (!['reply', 'error'].includes(state.phase) || state.turn === this._lastTurn)
+            return;
+        this._lastTurn = state.turn;
+        if (state.phase === 'error') {
+            this._post({key: 'assistant', icon: 'isle-warning-symbolic', title: 'Assistant', subtitle: state.error,
+                subtitleLines: 2, tone: 'bad', duration: REMINDER_DURATION, page: 'assistant'});
+            return;
+        }
+        const reply = String(state.reply ?? '').replace(/\*\*|`/g, '').replace(/\s+/g, ' ').trim();
+        if (!reply)
+            return;
+        const words = reply.split(' ').length;
+        this._post({key: 'assistant', icon: 'isle-sparkle-symbolic', title: reply, titleLines: 2,
+            subtitle: state.heard ? `“${state.heard}”` : 'Assistant', tone: 'claude',
+            duration: Math.min(14000, 3500 + words * 260), page: 'assistant'});
+    }
+
+    /** Voice shows (dictating, the words typed) or goes; the open island stays open, dictation working under it. */
+    _onVoice(state) {
+        this._voice.set(state);
+        if (state) {
+            if (this._presentation === 'expanded')
+                return;
+            if (this._presentation === 'peek') {
+                const alert = this._peek.alert;
+                // Shown again after, unless it asks (that one comes back from the asks).
+                if (alert && !alert.actions)
+                    this._waiting.unshift(alert);
+                this._cancel('alert');
+                this._peek.alert = null;
+            }
+            this._presentation = 'voice';
+            this._present();
+        } else if (this._presentation === 'voice') {
+            this._presentation = 'compact';
+            this._showNext();
+            if (this._presentation === 'compact')
+                this._present();
+        }
+        // Words typed or a request heard: the light flares once as it settles.
+        if (state?.phase === 'done' && this._voicePhase !== 'done')
+            this._glow.pulse();
+        this._voicePhase = state?.phase;
+        this._syncGlow();
+    }
+
+    /** The edge light for what the island shows: the assistant's colours while it listens or works, dictation's
+     * green while the microphone is on, and an alert that waits to be seen or answered beating like a heart
+     * in its colour. Settings' Edge light off puts it out. */
+    get _redLight() {
+        return (setting('edge-light-color') ?? 'red') === 'red';
+    }
+
+    _syncGlow() {
+        if (!this._glow)
+            return;
+        this._glow.alwaysMove = setting('edge-light-motion') !== false;
+        if (setting('edge-light') === false) {
+            this._glow.clear();
+            return;
+        }
+        const voice = this._presentation === 'voice' ? this._voice.state : null;
+        // Red throughout (Settings' default), or each in its own colours.
+        const red = this._redLight;
+        const assistant = daemon.state.assistant ?? {};
+        const busy = ['listening', 'transcribing', 'thinking', 'acting'].includes(assistant.phase);
+        if (voice && voice.phase !== 'error') {
+            const working = voice.phase === 'working';
+            const breathing = voice.phase === 'listening';
+            const level = breathing ? 0.3 : 0.4;
+            // Green whenever the voice is on, dictating or giving the assistant a command.
+            this._glow.aura(PALETTES.voice, {level, working, breathing});
+        } else if (this._presentation === 'expanded' && busy) {
+            this._glow.aura(red ? PALETTES.red : PALETTES.assistant, {level: 0.3, working: assistant.phase !== 'listening'});
+        } else if (this._presentation === 'peek' && (this._peek.alert?.actions || this._peek.alert && !this._alertNoticed)) {
+            this._glow.aura(red ? PALETTES.red : paletteAround(toneOf(this._peek.alert)), {level: 0.35, heartbeat: true});
+        } else {
+            this._glow.aura(null);
+        }
+    }
+
     _onPointer({x, y}) {
         this._pointer = {x, y};
         this._syncAutoHide();
+        if (this._presentation === 'voice') {
+            this._syncInteractive();
+            return;
+        }
         if (this._presentation === 'peek') {
             const over = this._island.contains(x, y);
             this._syncInteractive();
             if (this._peek.alert?.actions)
                 return;
-            if (over)
+            if (over) {
                 this._cancel('alert');
-            else if (!this._timers.alert)
+                this._noticed();
+            } else if (!this._timers.alert)
                 this._later('alert', Math.max(ALERT_LEAVE_MS, this._alertEnds - performance.now()), () => this._alertTimeUp());
             return;
         }
@@ -506,6 +701,10 @@ class Controller {
             size = {width: this._peek.preferredWidth, height: this._peek.height,
                 radius: PEEK_RADIUS, shoulder: PEEK_SHOULDER};
             view = this._peek;
+        } else if (this._presentation === 'voice') {
+            size = {width: this._voice.preferredWidth, height: this._voice.height,
+                radius: this._voice.height / 2, shoulder: PEEK_SHOULDER};
+            view = this._voice;
         } else {
             size = {width: this._compact.preferredWidth, height: this._compact.height,
                 radius: this._compact.radius, shoulder: COMPACT_SHOULDER};
@@ -519,6 +718,7 @@ class Controller {
             this._open = open;
             this._expanded.setActive(open);
         }
+        this._syncGlow();
     }
 }
 
