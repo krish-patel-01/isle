@@ -746,6 +746,17 @@ pub mod imp {
         set(|| put(CF_UNICODETEXT, &wide(text)))
     }
 
+    /// Puts text on the clipboard for a moment, to be pasted (dictation): kept out of Windows' clipboard history
+    /// and its cloud clipboard.
+    pub fn set_text_passing(text: &str) -> bool {
+        set(|| {
+            put(CF_UNICODETEXT, &wide(text));
+            put(format(w!("ExcludeClipboardContentFromMonitorProcessing")), &[0]);
+            put(format(w!("CanIncludeInClipboardHistory")), &0u32.to_le_bytes());
+            put(format(w!("CanUploadToCloudClipboard")), &0u32.to_le_bytes());
+        })
+    }
+
     /// Puts files back on the clipboard, to be pasted as copies.
     pub fn set_files(paths: &[String]) -> bool {
         // DROPFILES: where the names start, a point, whether it is in the non-client area, wide names.
@@ -833,6 +844,9 @@ pub mod imp {
         false
     }
     pub fn set_files(_paths: &[String]) -> bool {
+        false
+    }
+    pub fn set_text_passing(_text: &str) -> bool {
         false
     }
     pub fn set_image(_png: &[u8]) -> bool {

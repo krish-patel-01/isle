@@ -68,6 +68,17 @@ To work on the island's look without building: `python -m http.server -d crates/
   phone's browser, on the same Wi-Fi; each phone is let in with Allow. The web server, its sessions and the page
   are isled's own (`crates/isle-daemon/src/share`); it ends with Stop, when the screen locks, the PC sleeps or the
   network changes. Windows may ask to let Isle through its firewall the first time.
+- **Alerts**: plugging the charger in or out, a full or low battery (20, 10 and 5%), going offline, and Bluetooth
+  devices connecting with their battery, as Windows Settings shows it. Each has a switch in Settings → Island.
+- **Dictation** (as LocalFlow does it): hold Right Ctrl, speak, let go, and the words are typed where the cursor
+  is; Right Ctrl + Space keeps listening hands-free. The island shows the microphone's wave meanwhile. Speech is
+  turned into text on this computer by NVIDIA's Parakeet (English) through sherpa-onnx, linked into isle.exe;
+  the model (108 MB) is downloaded once from Settings → Voice, or LocalFlow's own is used. Nothing leaves the PC.
+- **Voice assistant**: Win+Alt+I (Super+I on GNOME; Win+I is Windows' Settings), or the Assistant page, to talk
+  or type. Claude Code answers with your own sign-in, step by step as on GNOME: Isle looks things up for it
+  (read-only PowerShell checks, files, apps), does things on the desktop (apps, windows, sound, Wi-Fi, dark mode,
+  reminders, typing at the cursor), and runs a command that changes the computer only after Run. A switch in
+  Settings → Voice turns it off. Claude Code only, of the AIs GNOME's assistant offers.
 - **Settings**: a click on the tray icon, the gear in the open island, or starting Isle again. Isle starts with
   Windows once installed, hides over full-screen videos and games (not over maximized windows), and warns as an
   AI plan nears its limits.
@@ -77,6 +88,8 @@ Hooks talk to Isle over a local port; its number and a random key are in `%LOCAL
 
 ## Still to port
 
-The voice assistant. The glass look is a
+Codex, Grok and the other AIs in the assistant, its bot face, and speech in languages other than English. The
+glass look is a
 deep smoked tint here: Windows has no blur an always-on-top, never-active window can cut to the island's shape.
-`cargo tauri build` makes the installer (`target/release/bundle/nsis`).
+`cargo tauri build` makes the installer (`target/release/bundle/nsis`). Isle links the C runtime statically (for
+sherpa-onnx); with Build Tools older than 17.12, `src/msvc_stl.rs` fills in the STL helpers its libraries need.

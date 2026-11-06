@@ -62,6 +62,8 @@ export class Island {
         this.edge = null;
         this.sheen = 0;
         this.onFrame = null;
+        /** The outline as last drawn, an SVG path. */
+        this.path = '';
         window.addEventListener('resize', () => this._sync());
     }
 
@@ -191,6 +193,7 @@ export class Island {
             canvas.height = Math.round(height * ratio);
         }
         const path = outline(this.centre, this._width.value, this._height.value, this._radius.value, this._shoulder.value);
+        this.path = path;
         const shape = this.shape;
         const cr = canvas.getContext('2d');
         cr.setTransform(1, 0, 0, 1, 0, 0);

@@ -33,6 +33,12 @@ pub fn defaults() -> Map<String, Value> {
         "hidden-pages": [],
         "app-usage": false,
         "notification-alerts": true,
+        "alert-power": true,
+        "alert-network": true,
+        "alert-bluetooth": true,
+        "edge-light": true,
+        "edge-light-color": "red",
+        "edge-light-motion": true,
         "track-peek": false,
         "call-activity": true,
         "call-preview": true,
@@ -44,6 +50,13 @@ pub fn defaults() -> Map<String, Value> {
         "usage-warn": 80,
         "usage-critical": 95,
         "chimes": true,
+        "dictation": true,
+        "dictation-key": "right-ctrl",
+        "dictation-hands-free": true,
+        "dictation-insert": "paste",
+        "dictation-fillers": true,
+        "assistant": true,
+        "assistant-model": "",
     }) else {
         unreachable!()
     };

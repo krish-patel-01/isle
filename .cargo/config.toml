@@ -8,3 +8,8 @@ GGML_AVX2 = "ON"
 GGML_FMA = "ON"
 GGML_F16C = "ON"
 GGML_BMI2 = "ON"
+
+# sherpa-onnx (speech to text) comes as libraries built with the static C runtime: Isle links it the same way,
+# which also leaves isle.exe needing no Visual C++ runtime installed.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

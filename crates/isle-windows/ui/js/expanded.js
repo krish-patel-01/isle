@@ -25,6 +25,7 @@ const TABS = {
     calendar: {icon: 'isle-calendar', label: 'Calendar'},
     apps: {icon: 'isle-apps', label: 'Apps'},
     usage: {icon: 'isle-gauge', label: 'Usage'},
+    assistant: {icon: 'isle-sparkle-symbolic', label: 'Assistant'},
 };
 const PAUSED_BARS_OPACITY = 110 / 255;
 const SLIDE_DISTANCE = 48;
@@ -209,6 +210,7 @@ export class ExpandedView {
             // The Call page only has a tab during a call.
             page.hidden = page.name === 'call' ? !daemon.state.call?.active || settings['call-activity'] === false
                 : page.name === 'usage' ? settings['usage-enabled'] === false
+                : page.name === 'assistant' ? settings['assistant'] === false
                 : page.name === 'apps' ? !settings['app-usage'] : hidden.includes(page.name);
         // At least one page stays.
         if (this._pages.every(page => page.hidden))

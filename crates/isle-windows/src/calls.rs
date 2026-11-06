@@ -467,7 +467,7 @@ fn choose_window(call: &mut Active, windows: &[Win]) {
 }
 
 #[cfg(windows)]
-mod imp {
+pub(crate) mod imp {
     use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT};
     use windows::Win32::Graphics::Dwm::{
         DWM_THUMBNAIL_PROPERTIES, DWM_TNP_OPACITY, DWM_TNP_RECTDESTINATION, DWM_TNP_RECTSOURCE,
@@ -844,7 +844,7 @@ mod imp {
 }
 
 #[cfg(not(windows))]
-mod imp {
+pub(crate) mod imp {
     use super::{Holder, Win};
 
     pub fn in_use(_capability: &str) -> Vec<(Holder, i64)> {
