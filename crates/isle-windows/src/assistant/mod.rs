@@ -46,6 +46,8 @@ const KEEP_WARM: Duration = Duration::from_secs(3 * 60);
 /// A conversation this long starts over, so it never grows heavy; it also starts over each day.
 const MAX_TURNS: u32 = 30;
 /// Audio is judged for a pause in chunks this long (isle_core's endpointer).
+/// How high the pause detector's floors are here, against isled's (a quiet laptop microphone).
+const QUIET_MIC: f32 = 0.35;
 const CHUNK: usize = (mic::RATE as usize) * isle_core::voice::CHUNK_MS as usize / 1000;
 const CHAT_FILE: &str = "assistant.json";
 
@@ -301,6 +303,7 @@ impl Assistant {
             .and_then(Result::ok)
             .unwrap_or_default();
         let text = text.trim().to_owned();
+        log::info!(target: "isle::assistant", "heard {} words", text.split_whitespace().count());
         if text.is_empty() {
             self.voice.flash("assistant", "error", "I didn’t catch that", 1600);
             self.phase("idle");
@@ -312,8 +315,10 @@ impl Assistant {
     /// Records until the user pauses after speaking; None when nothing was said or it stopped.
     fn record(&self) -> Option<Vec<f32>> {
         let (verdicts, verdict) = std::sync::mpsc::channel();
-        let mut endpointer = Endpointer::new();
+        // Windows hands the microphone over as it hears it, with no gain: a laptop's hears speech quietly.
+        let mut endpointer = Endpointer::quiet_mic(QUIET_MIC);
         let mut pending: Vec<f32> = Vec::new();
+        let (heard_tx, heard_rx) = std::sync::mpsc::channel();
         let mic = Mic::start(Some(Box::new(move |chunk: &[f32]| {
             pending.extend_from_slice(chunk);
             while pending.len() >= CHUNK {
@@ -321,6 +326,7 @@ impl Assistant {
                 pending.drain(..CHUNK);
                 let judged = endpointer.push(level);
                 if judged != Verdict::Listening {
+                    let _ = heard_tx.send((endpointer.room(), endpointer.loudest()));
                     let _ = verdicts.send(judged);
                 }
             }
@@ -340,6 +346,10 @@ impl Assistant {
             }
         };
         let audio = mic.stop();
+        if let Ok((room, loudest)) = heard_rx.try_recv() {
+            log::info!(target: "isle::assistant", "listened {:.1}s: {judged:?}, room {room:.4}, loudest {loudest:.4}",
+                audio.len() as f32 / mic::RATE as f32);
+        }
         (judged == Some(Verdict::Done)).then_some(audio)
     }
 

@@ -43,16 +43,36 @@ const SILENT_RMS: f32 = 1e-4;
 
 /// Judges the whole recording so far each chunk, so speech that starts at once (before the room's
 /// noise is known) still counts once a pause reveals how quiet the room is.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Endpointer {
     levels: Vec<f32>,
     speaking: bool,
+    /// The quietest levels counted as speech starting and going on, however quiet the room.
+    min_speech: f32,
+    min_keep: f32,
+}
+
+impl Default for Endpointer {
+    fn default() -> Self {
+        Self { levels: Vec::new(), speaking: false, min_speech: MIN_SPEECH_RMS, min_keep: MIN_KEEP_RMS }
+    }
 }
 
 impl Endpointer {
     /// A fresh recording, nothing heard yet.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// For a microphone that hears speech quietly (a laptop's, on Windows, with no gain applied): its floors
+    /// `share` as high, so speech is told from the room by how much louder it is than the room.
+    pub fn quiet_mic(share: f32) -> Self {
+        Self { min_speech: MIN_SPEECH_RMS * share, min_keep: MIN_KEEP_RMS * share, ..Self::default() }
+    }
+
+    /// The loudest chunk so far (RMS, 0..1), for the log.
+    pub fn loudest(&self) -> f32 {
+        self.levels.iter().copied().fold(0.0, f32::max)
     }
 
     /// Whether speech has started.
@@ -85,8 +105,8 @@ impl Endpointer {
         self.levels.push(rms);
         let elapsed_ms = self.levels.len() as u32 * CHUNK_MS;
         let noise = self.noise();
-        let start = (noise * SPEECH_OVER_NOISE).max(MIN_SPEECH_RMS);
-        let keep = (noise * KEEP_OVER_NOISE).max(MIN_KEEP_RMS);
+        let start = (noise * SPEECH_OVER_NOISE).max(self.min_speech);
+        let keep = (noise * KEEP_OVER_NOISE).max(self.min_keep);
 
         // The last chunk of a run long enough to be speech, not a click; once started, a softer one.
         let (mut run, mut last_speech, mut speech_chunks) = (0, None, 0);
@@ -152,6 +172,20 @@ mod tests {
             }
         }
         verdict
+    }
+
+    #[test]
+    fn a_quiet_mic_hears_quiet_speech() {
+        // Room at 0.002, speech at 0.008: under the usual floor, but four times the room.
+        let mut usual = Endpointer::new();
+        feed(&mut usual, 0.002, 1000);
+        feed(&mut usual, 0.008, 1500);
+        assert!(!usual.heard_speech());
+        let mut quiet = Endpointer::quiet_mic(0.35);
+        feed(&mut quiet, 0.002, 1000);
+        feed(&mut quiet, 0.008, 1500);
+        assert!(quiet.heard_speech());
+        assert_eq!(feed(&mut quiet, 0.002, 2500), Verdict::Done);
     }
 
     #[test]

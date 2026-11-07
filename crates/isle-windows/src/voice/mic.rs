@@ -199,10 +199,14 @@ mod tests {
     #[ignore]
     fn records() {
         let mic = super::Mic::start(None).expect("the microphone");
-        std::thread::sleep(std::time::Duration::from_secs(3));
+        let seconds = std::env::var("ISLE_MIC_SECONDS").ok().and_then(|s| s.parse().ok()).unwrap_or(3);
+        std::thread::sleep(std::time::Duration::from_secs(seconds));
         let heard = mic.stop();
         let peak = heard.iter().fold(0f32, |m, s| m.max(s.abs()));
         let zeros = heard.iter().filter(|s| **s == 0.0).count();
         println!("{} samples, rms {:.5}, peak {:.5}, zeros {}", heard.len(), super::rms(&heard), peak, zeros);
+        // Each 50 ms chunk's level, as the assistant's pause detector sees them.
+        let chunks: Vec<String> = heard.chunks(super::RATE as usize / 20).map(|c| format!("{:.4}", super::rms(c))).collect();
+        println!("chunks {}", chunks.join(" "));
     }
 }
