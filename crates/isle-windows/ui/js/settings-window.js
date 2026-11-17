@@ -599,7 +599,9 @@ function usagePage() {
     return page('usage', 'AI Usage', 'isle-gauge', [usage, agents]);
 }
 
-const WEBSITE = 'https://github.com/zickrian/isle';
+// This unofficial port's home, where Windows problems go; and the original Isle's.
+const WEBSITE = 'https://github.com/krish-patel-01/isle';
+const ORIGINAL = 'https://github.com/zickrian/isle';
 
 /** The speech model for dictation and the assistant: downloaded once, here. */
 function speechModelRow() {
@@ -673,10 +675,13 @@ function voicePage() {
 function aboutPage() {
     const version = el('span', '', ['Isle']);
     invoke('plugin:app|version').then(v => (version.textContent = `Isle ${v}`)).catch(() => {});
-    const about = group('', 'A notch-style island, for Windows. © 2026 zickrian, free software under the GPL.', [
+    const about = group('', 'An unofficial community port of Isle, the notch-style island by zickrian, to Windows. '
+        + '© 2026 zickrian and Krishkumar Patel, free software under the GPL.', [
         actionRow('Website', 'Features, installing and updating', 'isle-open-symbolic', () => invoke('open_link', {url: WEBSITE})),
-        actionRow('Report a problem', 'On GitHub', 'isle-open-symbolic',
-            () => invoke('open_link', {url: `${WEBSITE}/issues/new/choose`})),
+        actionRow('Report a problem', 'On this port’s GitHub, not the original Isle’s', 'isle-open-symbolic',
+            () => invoke('open_link', {url: `${WEBSITE}/issues/new`})),
+        actionRow('The original Isle', 'For GNOME, by zickrian', 'isle-open-symbolic',
+            () => invoke('open_link', {url: ORIGINAL})),
     ]);
     about.querySelector('.group-title').replaceChildren(version);
     const reset = actionRow('Reset all settings', 'Back to how Isle came; your data stays', null, () => confirm({

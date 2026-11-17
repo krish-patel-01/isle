@@ -220,10 +220,10 @@ fn join_meeting(url: String) {
     }
 }
 
-/// Opens Isle's pages on the web in the browser; only those.
+/// Opens the port's and the original Isle's pages on the web in the browser; only those.
 #[tauri::command]
 fn open_link(url: String) {
-    if url.starts_with("https://github.com/zickrian/isle") {
+    if url.starts_with("https://github.com/krish-patel-01/isle") || url.starts_with("https://github.com/zickrian/isle") {
         screen::open(&url);
     }
 }
