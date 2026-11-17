@@ -1,5 +1,61 @@
 <div align="center">
 
+# Isle for Windows
+
+**An unofficial community port of [Isle](https://github.com/zickrian/isle) to Windows 11.**
+
+</div>
+
+> [!IMPORTANT]
+> This is **not** the official Isle. Isle is made by [zickrian](https://github.com/zickrian) for the GNOME
+> desktop. This fork, maintained by [Krishkumar Patel](https://github.com/krish-patel-01), brings it to Windows.
+> **Please report Windows problems [here](https://github.com/krish-patel-01/isle/issues), not on the original
+> repo**: zickrian can't test or fix the Windows version.
+
+Isle puts a black notch at the top centre of your screen. It shows the time and what's going on, and opens into a
+small panel when you rest the pointer on it. This port keeps the original's look, pages and feel, rebuilt for
+Windows with [Tauri](https://tauri.app). It reuses Isle's own core code, icons and fonts.
+
+## Install
+
+1. Download `Isle_…_x64-setup.exe` from the [latest release](https://github.com/krish-patel-01/isle/releases/latest).
+2. Run it. It installs for your user only and needs no administrator rights.
+3. Windows SmartScreen may say *"Windows protected your PC"*, because the installer isn't signed with a paid
+   certificate. Click **More info**, then **Run anyway**.
+
+Isle starts with Windows from then on. Click its tray icon for Settings. To remove it, use **Settings → Apps →
+Installed apps → Isle**. Tick *Delete the application data* to remove your settings and history too.
+
+Tested on Windows 11. Windows 10 may work, but hasn't been tried.
+
+## What works on Windows
+
+- **Music** from any player in Windows' media controls, with synced lyrics
+- **Calls** in WhatsApp, Teams, Zoom, Discord, or Meet in a browser, with mute and a live preview
+- **Shelf**: clipboard history with search and pins; drop files on the island; send files to and from your phone
+- **Alerts** for the charger, battery, Wi-Fi and Bluetooth devices, plus an edge light for alerts
+- **Dictation**: hold Right Ctrl and speak, and the words are typed where the cursor is. It runs on your PC, and
+  nothing leaves it.
+- **Voice assistant** (Win+Alt+I), using Claude Code with your own sign-in
+- **Claude Code asks from the island**: Allow, Deny and Always for permissions
+- **Calendar** with meeting alerts and Join, **Timer**, **Reminders**, **Notifications**, **Apps** usage time, and
+  **AI usage** limits
+
+Not ported yet: Codex, Grok and the other AIs in the assistant, and speech in languages other than English. The
+full list, and how to build it yourself, is in [crates/isle-windows/README.md](crates/isle-windows/README.md).
+
+## Credit and license
+
+All of Isle's design, and most of its code, is zickrian's. The Windows port is Krishkumar Patel's. Both are free
+software under the [GPL-3.0-or-later](LICENSE). If you like Isle, consider
+[supporting its author](https://sociabuzz.com/zickrian/tribe).
+
+---
+
+*The original Isle's README follows. It describes the GNOME version.*
+
+<div align="center">
+
 # Isle
 
 **A notch-style island for the GNOME desktop.**

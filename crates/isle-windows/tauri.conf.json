@@ -21,10 +21,10 @@
     "icon": [
       "icons/icon.ico"
     ],
-    "publisher": "zickrian",
-    "homepage": "https://github.com/zickrian/isle",
-    "shortDescription": "A notch-style island at the top of the screen",
-    "copyright": "© 2026 zickrian, GPL-3.0-or-later",
+    "publisher": "Krishkumar Patel",
+    "homepage": "https://github.com/krish-patel-01/isle",
+    "shortDescription": "A notch-style island at the top of the screen (unofficial Windows port of Isle)",
+    "copyright": "© 2026 zickrian and Krishkumar Patel, GPL-3.0-or-later",
     "license": "GPL-3.0-or-later",
     "windows": {
       "nsis": {
