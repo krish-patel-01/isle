@@ -834,7 +834,22 @@ fn ct_eq(a: &str, b: &str) -> bool {
     a.as_bytes().ct_eq(b.as_bytes()).into()
 }
 
+/// `N` bytes from the system's random source.
+#[cfg(windows)]
+pub fn random<const N: usize>() -> [u8; N] {
+    use windows::Win32::Security::Cryptography::{
+        BCRYPT_USE_SYSTEM_PREFERRED_RNG, BCryptGenRandom,
+    };
+    let mut bytes = [0u8; N];
+    // SAFETY: fills the whole of `bytes` from the system's preferred generator.
+    let status = unsafe { BCryptGenRandom(None, &mut bytes, BCRYPT_USE_SYSTEM_PREFERRED_RNG) };
+    // Never a guessable token: better no sharing at all.
+    assert!(status.is_ok(), "no random numbers: {status:?}");
+    bytes
+}
+
 /// `N` bytes from the kernel's random source.
+#[cfg(unix)]
 pub fn random<const N: usize>() -> [u8; N] {
     let mut bytes = [0u8; N];
     let mut filled = 0;

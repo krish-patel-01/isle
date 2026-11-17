@@ -340,6 +340,8 @@ async fn a_phone_waits_for_the_island() {
     assert_eq!(rig.state(&cookie).await["status"], "allowed");
 }
 
+// A file name with the quote this one is about can't be made everywhere.
+#[cfg(unix)]
 #[tokio::test]
 async fn shelf_files_come_down_by_id() {
     let rig = Rig::new(
@@ -395,12 +397,15 @@ async fn uploads_land_on_the_shelf_under_a_safe_name() {
     assert_eq!(rig.files_in_dir(), ["bashrc", "bashrc 2"]);
     assert_eq!(*rig.host.received.lock().unwrap(), ["bashrc", "bashrc 2"]);
     assert_eq!(rig.host.items.lock().unwrap().len(), 2);
-    let mode = std::os::unix::fs::PermissionsExt::mode(
-        &std::fs::metadata(rig.dir.join("bashrc"))
-            .unwrap()
-            .permissions(),
-    );
-    assert_eq!(mode & 0o777, 0o600);
+    #[cfg(unix)]
+    {
+        let mode = std::os::unix::fs::PermissionsExt::mode(
+            &std::fs::metadata(rig.dir.join("bashrc"))
+                .unwrap()
+                .permissions(),
+        );
+        assert_eq!(mode & 0o777, 0o600);
+    }
 }
 
 #[tokio::test]
@@ -801,6 +806,8 @@ async fn the_disk_counts_what_uploads_under_way_will_bring() {
     assert!(rig.session.reserve(600, 0, CAPACITY, free).is_ok());
 }
 
+// Pipes on a shelf are a Linux matter.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_file_that_never_opens_is_left_out() {
     let rig = Rig::new(Limits::default(), &[("a.txt", b"shared")]).await;
