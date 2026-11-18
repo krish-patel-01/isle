@@ -57,6 +57,7 @@ pub fn defaults() -> Map<String, Value> {
         "dictation-fillers": true,
         "assistant": true,
         "assistant-model": "",
+        "assistant-effort": "medium",
     }) else {
         unreachable!()
     };

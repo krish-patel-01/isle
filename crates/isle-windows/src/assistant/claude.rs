@@ -54,11 +54,21 @@ pub struct Claude {
     lines: Lines<BufReader<ChildStdout>>,
     stderr: Arc<Mutex<VecDeque<String>>>,
     pub conversation: Option<String>,
+    /// The model and effort it was started with: a change in Settings starts it afresh.
+    pub model: String,
+    pub effort: String,
 }
 
 impl Claude {
     /// Starts Claude Code with Isle's job (in `instructions`) in place of its coding-agent prompt.
-    pub fn start(model: &str, resume: Option<&str>, workspace: &Path, instructions: &Path, schema: &str) -> anyhow::Result<Self> {
+    pub fn start(
+        model: &str,
+        effort: &str,
+        resume: Option<&str>,
+        workspace: &Path,
+        instructions: &Path,
+        schema: &str,
+    ) -> anyhow::Result<Self> {
         let program = program().context("Claude Code is not installed")?;
         std::fs::create_dir_all(workspace)?;
         let mut command = Command::new(program);
@@ -74,6 +84,10 @@ impl Claude {
             .args(["--json-schema", schema]);
         if !model.is_empty() {
             command.args(["--model", model]);
+        }
+        // How hard it thinks; a model without that level thinks as it does by default.
+        if !effort.is_empty() {
+            command.args(["--effort", effort]);
         }
         if let Some(id) = resume {
             command.args(["--resume", id]);
@@ -101,7 +115,15 @@ impl Claude {
                 kept.push_back(line);
             }
         });
-        Ok(Self { _child: child, stdin, lines, stderr, conversation: resume.map(str::to_owned) })
+        Ok(Self {
+            _child: child,
+            stdin,
+            lines,
+            stderr,
+            conversation: resume.map(str::to_owned),
+            model: model.to_owned(),
+            effort: effort.to_owned(),
+        })
     }
 
     /// One turn; an error carries what Claude Code printed to stderr meanwhile.

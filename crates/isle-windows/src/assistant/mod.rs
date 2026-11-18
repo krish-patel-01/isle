@@ -78,6 +78,8 @@ pub struct Config {
     pub on: bool,
     /// "" for Claude Code's own default, or "sonnet", "opus", "haiku".
     pub model: String,
+    /// How hard it thinks: "low", "medium", "high", "xhigh" or "max"; "" for Claude Code's own default.
+    pub effort: String,
 }
 
 /// The day's conversation, kept across restarts.
@@ -372,6 +374,10 @@ impl Assistant {
                 *chat = Chat { day: today(), ..Default::default() };
                 *claude = None;
             }
+            // A model or effort picked since it started: start it again, going on with the same conversation.
+            if claude.as_ref().is_some_and(|running| running.model != config.model || running.effort != config.effort) {
+                *claude = None;
+            }
             chat.items.push(json!({"role": "you", "text": text}));
         }
         self.chat_changed();
@@ -388,7 +394,7 @@ impl Assistant {
             let _ = std::fs::create_dir_all(&workspace);
             let _ = std::fs::write(&instructions, INSTRUCTIONS);
             let session = self.chat.lock().unwrap().session.clone();
-            match Claude::start(&config.model, session.as_deref(), &workspace, &instructions, SCHEMA) {
+            match Claude::start(&config.model, &config.effort, session.as_deref(), &workspace, &instructions, SCHEMA) {
                 Ok(started) => *claude = Some(started),
                 Err(err) => {
                     log::warn!(target: "isle::assistant", "{err:#}");
@@ -747,7 +753,7 @@ mod live {
             emit,
             Arc::new(|interface: &str, method: &str, arg: Value| println!("isle: {interface}.{method} {arg}")),
             Arc::new(|| json!({"todo": [], "events": []})),
-            || Config { on: true, model: "haiku".into() },
+            || Config { on: true, model: "haiku".into(), effort: "low".into() },
         );
         assistant.new_chat();
         assistant.ask("How much battery does this laptop have, and is it charging? Check, then tell me in one sentence.".into());

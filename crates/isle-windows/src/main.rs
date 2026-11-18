@@ -898,9 +898,10 @@ fn main() {
                     assistant::Config {
                         on: settings.bool("assistant"),
                         model: settings.get("assistant-model").as_str().unwrap_or_default().to_owned(),
+                        effort: settings.get("assistant-effort").as_str().unwrap_or_default().to_owned(),
                     }
                 }
-                None => assistant::Config { on: false, model: String::new() },
+                None => assistant::Config { on: false, model: String::new(), effort: String::new() },
             },
         )
     };

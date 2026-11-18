@@ -645,6 +645,14 @@ function assistantGroup() {
             ['opus', 'Opus'],
             ['haiku', 'Haiku (quickest)'],
         ]), {enabled: on}),
+        depends(choiceRow('assistant-effort', 'Effort', 'How hard Claude thinks before it answers: higher is ' +
+            'more careful, slower, and uses more of your plan', [
+            ['low', 'Low (quickest)'],
+            ['medium', 'Medium'],
+            ['high', 'High'],
+            ['xhigh', 'Extra high'],
+            ['max', 'Max'],
+        ]), {enabled: on}),
     ]);
 }
 
