@@ -386,7 +386,8 @@ function islandPage() {
             switchRow('start-with-windows', 'Start with Windows', 'Isle opens on its own when you sign in'),
         ]),
         group('Appearance', null, [
-            choiceRow('island-theme', 'Island', 'Black, or smoked glass that lets what is behind it show through', [
+            choiceRow('island-theme', 'Island', 'Black, or glass that blurs what is behind it. Glass keeps the ' +
+                'island out of screenshots and screen sharing, as it looks behind itself', [
                 ['black', 'Black'],
                 ['glass', 'Glass'],
             ]),

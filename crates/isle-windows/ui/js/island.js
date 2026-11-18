@@ -61,6 +61,9 @@ export class Island {
         /** The glass's rim ({top, bottom} alphas) and sheen, or none (theme.js). */
         this.edge = null;
         this.sheen = 0;
+        /** The glass's backdrop (glass.js) and how it is toned (theme.js `blur()`), while glass shows over one. */
+        this.backdrop = null;
+        this.tone = null;
         this.onFrame = null;
         /** The outline as last drawn, an SVG path. */
         this.path = '';
@@ -122,6 +125,12 @@ export class Island {
     /** Draws the shape again (a new colour). */
     redraw() {
         this._sync();
+    }
+
+    /** Draws the glass again over a new picture of what is behind, the shape as it is. */
+    drawBackdrop() {
+        if (this.backdrop && this.tone)
+            this.backdrop.render(this.shape, this.tone);
     }
 
     get morphing() {
@@ -195,6 +204,7 @@ export class Island {
         const path = outline(this.centre, this._width.value, this._height.value, this._radius.value, this._shoulder.value);
         this.path = path;
         const shape = this.shape;
+        this.drawBackdrop();
         const cr = canvas.getContext('2d');
         cr.setTransform(1, 0, 0, 1, 0, 0);
         cr.clearRect(0, 0, canvas.width, canvas.height);
@@ -221,7 +231,8 @@ export class Island {
                 rim.addColorStop(1, `rgba(255, 255, 255, ${this.edge.bottom})`);
                 cr.strokeStyle = rim;
                 cr.lineWidth = 2;
-                cr.stroke(shapePath);
+                // Round the sides and bottom only: the top is the screen's edge, not the island's.
+                cr.stroke(new Path2D(path.replace(/\s*Z\s*$/, '')));
             }
             cr.restore();
         }

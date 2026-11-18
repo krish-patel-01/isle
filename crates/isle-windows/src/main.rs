@@ -17,6 +17,7 @@ mod calendar;
 mod calls;
 mod clipboard;
 mod dropzone;
+mod glass;
 #[path = "../../isle-daemon/src/http.rs"]
 mod http;
 mod media;
@@ -198,6 +199,23 @@ fn settings_changed(handle: &AppHandle, app: &App, key: &str) {
 #[tauri::command]
 fn idle_ms() -> u64 {
     app_usage::imp::idle().as_millis() as u64
+}
+
+/// Starts or stops capturing what is behind the island, for the glass look (glass.rs).
+#[tauri::command]
+fn glass_capture(handle: AppHandle, glass: tauri::State<'_, glass::Glass>, on: bool) {
+    glass.set(&handle, on);
+}
+
+/// The latest picture behind the island: its width and height (little-endian u32s), then its BGRA pixels.
+#[tauri::command]
+fn glass_frame(glass: tauri::State<'_, glass::Glass>) -> tauri::ipc::Response {
+    let frame = glass.frame.lock().unwrap();
+    let mut bytes = Vec::with_capacity(8 + frame.pixels.len());
+    bytes.extend_from_slice(&frame.width.to_le_bytes());
+    bytes.extend_from_slice(&frame.height.to_le_bytes());
+    bytes.extend_from_slice(&frame.pixels);
+    tauri::ipc::Response::new(bytes)
 }
 
 /// App usage today, over seven days and over 30, for the Apps page (AppUsage1's GetStats).
@@ -943,6 +961,7 @@ fn main() {
         // One Isle at a time; starting it again (from the Start menu, say) opens its Settings.
         .plugin(tauri_plugin_single_instance::init(|handle, _args, _cwd| show_settings(handle)))
         .manage(app.clone())
+        .manage(glass::Glass::default())
         .invoke_handler(tauri::generate_handler![
             snapshot,
             call,
@@ -957,6 +976,8 @@ fn main() {
             calendar_parse,
             app_usage_stats,
             idle_ms,
+            glass_capture,
+            glass_frame,
             call_mute,
             call_raise,
             call_preview,

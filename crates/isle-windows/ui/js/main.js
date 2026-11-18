@@ -8,6 +8,7 @@
 import {CompactView} from './compact.js';
 import {daemon} from './daemon.js';
 import {ExpandedView} from './expanded.js';
+import {GlassBackdrop} from './glass.js';
 import {Glow, PALETTES, RED, paletteAround} from './glow.js';
 import {Island} from './island.js';
 import {AppsPage} from './pages/apps.js';
@@ -28,12 +29,13 @@ import {PeekView, REMINDER_DURATION, SYSTEM_ALERTS, agentAsks, agentEvent, meeti
 const {invoke} = window.__TAURI__.core;
 const {listen} = window.__TAURI__.event;
 
-/** Sizes in CSS pixels, as controller.js has them for an island hanging from the screen's top edge. */
-const COMPACT_SHOULDER = 10;
+/** Sizes in CSS pixels, as controller.js has them for an island hanging from the screen's top edge; the
+ * shoulders a third narrower than GNOME's (10, 22 and 13), the curves into the screen's edge gentler. */
+const COMPACT_SHOULDER = 7;
 const EXPANDED_RADIUS = 32;
-const EXPANDED_SHOULDER = 22;
+const EXPANDED_SHOULDER = 15;
 const PEEK_RADIUS = 28;
-const PEEK_SHOULDER = 13;
+const PEEK_SHOULDER = 9;
 /** An alert held under the pointer goes this long after the pointer leaves it. */
 const ALERT_LEAVE_MS = 1500;
 /** An alert shows at least this long; then it stays until a key or the pointer moves, and this long after. */
@@ -200,6 +202,12 @@ class Controller {
         await listen('pointer', event => this._onPointer(event.payload));
         // Files dragged onto the island: Isle's own drop zone over it says so (dropzone.rs), and Tauri where it can.
         await listen('fileDrag', event => this._onDragDrop(event.payload));
+        // The glass's backdrop: a new picture of what is behind (glass.rs), or none to be had.
+        await listen('glass-frame', () => this._onGlassFrame());
+        await listen('glass-unavailable', () => {
+            this._glassFailed = true;
+            this._syncGlass();
+        });
         await window.__TAURI__.webviewWindow.getCurrentWebviewWindow().onDragDropEvent(event => this._onDragDrop(event.payload));
         this._lastTrack = this._trackOf(daemon.state.nowPlaying);
         this._onCall = Boolean(daemon.state.call?.active);
@@ -228,10 +236,76 @@ class Controller {
         root.classList.toggle('isle-translucent', glass);
         root.classList.toggle('isle-glass-mid', glass && tint >= 34 && tint < 67);
         root.classList.toggle('isle-glass-dark', glass && tint >= 67);
+        this._applyLook();
+        this._syncGlass();
+    }
+
+    /** The island drawn in the look as it is now: over the glass's backdrop once one has come, else the smoke. */
+    _applyLook() {
         this._island.fill = Theme.fill();
         this._island.edge = Theme.edge();
         this._island.sheen = Theme.sheen();
+        this._island.tone = Theme.blur();
         this._island.redraw();
+    }
+
+    /** Captures what is behind the island while glass shows, and not while it is hidden or black (glass.rs). */
+    _syncGlass() {
+        let want = Theme.translucent() && !this._hidden && !this._glassFailed;
+        if (want && !this._backdrop) {
+            try {
+                this._backdrop = new GlassBackdrop(document.getElementById('glass'));
+            } catch (error) {
+                console.warn('no glass backdrop:', error);
+                this._glassFailed = true;
+                want = false;
+            }
+        }
+        if (want === Boolean(this._glassOn))
+            return;
+        this._glassOn = want;
+        invoke('glass_capture', {on: want}).catch(() => {});
+        if (!want) {
+            this._backdrop?.clear();
+            this._island.backdrop = null;
+            Theme.setBackdrop(false);
+            this._applyLook();
+        }
+    }
+
+    /** Fetches the newest picture behind the island and draws the glass over it; one fetch at a time, the last
+     * one asked for always fetched. */
+    async _onGlassFrame() {
+        if (!this._glassOn)
+            return;
+        if (this._fetchingGlass) {
+            this._glassPending = true;
+            return;
+        }
+        this._fetchingGlass = true;
+        try {
+            do {
+                this._glassPending = false;
+                const bytes = await invoke('glass_frame');
+                const buffer = bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes).buffer;
+                const view = new DataView(buffer);
+                const width = view.getUint32(0, true), height = view.getUint32(4, true);
+                if (!this._glassOn || !width || !height || buffer.byteLength < 8 + width * height * 4)
+                    continue;
+                this._backdrop.setFrame(width, height, new Uint8Array(buffer, 8, width * height * 4));
+                if (this._island.backdrop !== this._backdrop) {
+                    Theme.setBackdrop(true);
+                    this._island.backdrop = this._backdrop;
+                    this._applyLook();
+                } else {
+                    this._island.drawBackdrop();
+                }
+            } while (this._glassPending);
+        } catch (error) {
+            console.warn('glass frame:', error);
+        } finally {
+            this._fetchingGlass = false;
+        }
     }
 
     // Full screen
@@ -244,6 +318,7 @@ class Controller {
             return;
         this._hidden = hidden;
         invoke('set_shown', {shown: !hidden});
+        this._syncGlass();
         if (hidden) {
             this._onHidden();
             return;
