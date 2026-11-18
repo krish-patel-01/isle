@@ -3,7 +3,7 @@
 
 // The Shelf page (gnome-extension/src/pages/shelf.js and clips.js). Clipboard: the history as cards, pinned first,
 // then newest. Click a card to copy it; on hover: pin, a hand-off (text to Reminders, pictures and files to Files)
-// and ×. Filters by kind, a search that opens into a field (← → move between cards, Enter pastes into the window
+// and ×. Filters by kind, a search that opens into a field (← → ↑ ↓ move between cards, Enter pastes into the window
 // behind), and Clear all. Files: files dropped on the island (files.js). Phone, while sharing: a QR code to scan
 // (phone.js).
 
@@ -458,13 +458,16 @@ export class ShelfPage {
         this._filter();
     }
 
-    /** ← → move between cards, Enter pastes, Esc empties the search before it can close the island. */
+    /** ← → ↑ ↓ move between the cards shown, searched or not (the keypad's arrows arrive as these too); Enter
+     * pastes; Esc empties the search before it can close the island. */
     _onSearchKey(event) {
         switch (event.key) {
         case 'ArrowLeft':
+        case 'ArrowUp':
             this._moveSelection(-1);
             break;
         case 'ArrowRight':
+        case 'ArrowDown':
             this._moveSelection(1);
             break;
         case 'Enter': {

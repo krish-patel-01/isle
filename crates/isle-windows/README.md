@@ -60,7 +60,7 @@ To work on the island's look without building: `python -m http.server -d crates/
   call's window drawn by Windows. Video calls are told apart where Windows still records camera use in the
   registry; insider builds that keep it in a private database show every call as a voice call.
 - **Shelf**: the clipboard history, as cards of text, links, images and files (20 recent, 10 pinned), kept in
-  `%LOCALAPPDATA%\Isle\clipboard.json` and `clips`. Click a card to copy it; search with ← → and Enter to paste
+  `%LOCALAPPDATA%\Isle\clipboard.json` and `clips`. Click a card to copy it; search with ← → ↑ ↓ and Enter to paste
   into the window behind; pin, send text to Reminders, or clear. Copies password managers mark as private, and
   those from programs left out in Settings, are never kept. Its Files tab holds six files: drag files onto the
   island to park them, then drag a tile into any app, click it to copy the file, or double-click to open it. Press
